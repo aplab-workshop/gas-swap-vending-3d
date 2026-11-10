@@ -123,6 +123,20 @@
     </div>
   </details>
 
+  <details open>
+    <summary>ประเมินราคาโครงสร้าง</summary>
+    <div class="grid" style="grid-template-columns:1fr">
+      <select id="costOpt" style="width:100%;background:#0e1216;border:1px solid var(--line);color:var(--text);border-radius:6px;padding:5px;font:inherit"></select>
+    </div>
+    <table id="costCmp"></table>
+    <table id="costTbl"></table>
+    <details style="border-top:none;padding:4px 0 0">
+      <summary style="font-weight:400;color:var(--muted)">ราคาต่อหน่วย (แก้ได้ · บาท ไม่รวม VAT)</summary>
+      <div class="grid" id="gCost"></div>
+    </details>
+    <div id="costNote" style="color:var(--muted);font-size:11px;margin-top:6px;line-height:1.6"></div>
+  </details>
+
   <details>
     <summary>ขนาดตู้ (ซม.)</summary>
     <div class="grid" id="gMachine"></div>
@@ -820,6 +834,7 @@ function buildMachine(){
   renderPLC();
   buildDims();
   updateClearance();
+  updateCost();
   controls.target.set(0, layout.H*0.48, 0);
 }
 
@@ -860,6 +875,118 @@ function buildDims(){
 /* ============================================================
    7) ตารางตรวจระยะเผื่อ
    ============================================================ */
+/* ============================================================
+   7.5) ประเมินราคาโครงสร้าง — ปริมาณคำนวณจากขนาดโมเดลปัจจุบัน
+   ราคาต่อหน่วยเป็นค่าประมาณตลาดไทย (ไม่รวม VAT) — แก้ได้ในแผง
+   ไม่รวม: จอ, PLC, กลอนไฟฟ้า, กล้อง, จานหมุน, โซลาร์, ค่าขนส่ง/ติดตั้ง
+   ============================================================ */
+const COST = {
+  sheet: { name:'เหล็กแผ่นพับ (ตัดเลเซอร์ + พับ + พ่นสีฝุ่น)', short:'เหล็กพับ', rec:true, u:{
+    sheetKg:   { v:38,  t:'เหล็กแผ่น GI/SECC (บาท/กก.)' },
+    fabKg:     { v:30,  t:'ค่าตัดเลเซอร์ + พับ (บาท/กก.)' },
+    powderM2:  { v:180, t:'พ่นสีฝุ่น 2 หน้า (บาท/ตร.ม. ชิ้นงาน)' },
+    assyPct:   { v:20,  t:'ค่าประกอบ/รีเวท/เชื่อมจุด (%)' },
+  }},
+  tube: { name:'เหล็กกล่องเชื่อมโครง + หุ้มแผ่นเหล็ก', short:'เหล็กกล่อง', u:{
+    tubeM:     { v:55,  t:'เหล็กกล่อง 1½"×1½" หนา 1.6 มม. (บาท/ม.)' },
+    sheetKg:   { v:38,  t:'เหล็กแผ่นหุ้ม GI 1.0 มม. (บาท/กก.)' },
+    weldJoint: { v:60,  t:'ค่าเชื่อม (บาท/จุดต่อ)' },
+    paintM2:   { v:140, t:'รองพื้นกันสนิม + ทำสี (บาท/ตร.ม.)' },
+    assyPct:   { v:30,  t:'ค่าแรงตัด/เจียร/ประกอบ (%)' },
+  }},
+  alu: { name:'อลูมิเนียมโปรไฟล์ 40×40 + แผ่น ACP / อลูมิเนียม', short:'อลูโปรไฟล์', u:{
+    profileM:  { v:420, t:'อลูมิเนียมโปรไฟล์ 40×40 (บาท/ม.)' },
+    jointSet:  { v:70,  t:'ฉากยึด + ทีนัท + สกรู (บาท/จุดต่อ)' },
+    acpM2:     { v:420, t:'ACP 4 มม. ผิวนอก (บาท/ตร.ม.)' },
+    aluSheetM2:{ v:850, t:'แผ่นอลูมิเนียม 2 มม. ชั้น/ผนัง/ประตู (บาท/ตร.ม.)' },
+    assyPct:   { v:15,  t:'ค่าประกอบ (%)' },
+  }},
+};
+let costSel = 'sheet';
+
+function costQuantities(){
+  const { W, D, rows, bodyTop } = layout;
+  const cols = 4, m = v => v/100;
+  const Wm = m(W), Dm = m(D), Hc = m(bodyTop - P.baseH + P.headerH);    // ตัวตู้ + ป้ายหัว
+  const levels = rows.length + 2;                                       // พื้น, ระหว่างแถว, บนตัวตู้, บนป้าย
+  const frameLen = 2*(cols+1)*Hc + 2*levels*Wm + (cols+1)*levels*Dm;    // โครงแบบขั้นบันได หน้า+หลัง+ตัวเชื่อมลึก
+  const joints = (cols+1)*levels*2;
+  const skin = 2*Hc*Dm + Wm*Hc + 2*Wm*Dm + Wm*m(P.headerH);              // ข้าง×2, หลัง, บน, ล่าง, หน้าป้าย
+  const rowSum = rows.reduce((s,r)=>s+r.h, 0);
+  const internal = (rows.length-1)*Wm*Dm + (cols-1)*m(rowSum)*Dm;        // ชั้นกั้น + ผนังกั้นช่อง
+  // ประตู: แถวอุปกรณ์ 4 บาน, แถว 15 กก. 4 บาน (รวมช่องตรวจ), แถว 12.5/7 กก. แถวละ 3 บาน + แผงคีออสก์
+  const doorA = rows.reduce((s,r)=> s + (r.key==='acc' || r.key==='15' ? 4 : 3) * m(P.colW) * m(r.h), 0)
+    + m(P.colW) * m(layout.kioskH ?? 0);
+  return { Wm, Dm, Hc, frameLen, joints, skin, internal, doorA, area: skin+internal+doorA };
+}
+
+function costOf(key, q){
+  const u = Object.fromEntries(Object.entries(COST[key].u).map(([k,o])=>[k,o.v]));
+  const lines = [];
+  let kg = 0;
+  if(key==='sheet'){
+    const kgBody = q.skin*1.15*11.78, kgIn = (q.internal+q.doorA)*1.15*9.42;   // 1.5 มม. / 1.2 มม. + ขอบพับ 15%
+    kg = kgBody + kgIn;
+    lines.push(['เหล็กแผ่น ตัวตู้ 1.5 มม. + ภายใน/ประตู 1.2 มม.', `${kg.toFixed(0)} กก.`, kg*u.sheetKg]);
+    lines.push(['ตัดเลเซอร์ + พับขึ้นรูป', `${kg.toFixed(0)} กก.`, kg*u.fabKg]);
+    lines.push(['พ่นสีฝุ่น (2 หน้า)', `${(q.area*1.15).toFixed(1)} ตร.ม.`, q.area*1.15*u.powderM2]);
+  }else if(key==='tube'){
+    const kgFrame = q.frameLen*1.88, kgSheet = q.area*7.85;
+    kg = kgFrame + kgSheet;
+    lines.push(['โครงเหล็กกล่อง 1½" × 1.6 มม.', `${q.frameLen.toFixed(1)} ม.`, q.frameLen*u.tubeM]);
+    lines.push(['แผ่นหุ้ม GI 1.0 มม.', `${kgSheet.toFixed(0)} กก.`, kgSheet*u.sheetKg]);
+    lines.push(['งานเชื่อม', `${q.joints} จุด`, q.joints*u.weldJoint]);
+    lines.push(['รองพื้นกันสนิม + ทำสี', `${(q.area*2 + q.frameLen*0.16).toFixed(1)} ตร.ม.`, (q.area*2 + q.frameLen*0.16)*u.paintM2]);
+  }else{
+    const kgFrame = q.frameLen*1.5, kgAcp = q.skin*5.5, kgAl = (q.internal+q.doorA)*5.4;
+    kg = kgFrame + kgAcp + kgAl;
+    lines.push(['อลูมิเนียมโปรไฟล์ 40×40', `${q.frameLen.toFixed(1)} ม.`, q.frameLen*u.profileM]);
+    lines.push(['ชุดยึดมุม/ทีนัท', `${q.joints} จุด`, q.joints*u.jointSet]);
+    lines.push(['ACP 4 มม. ผิวนอก', `${q.skin.toFixed(1)} ตร.ม.`, q.skin*u.acpM2]);
+    lines.push(['แผ่นอลูมิเนียม 2 มม. (ชั้นรับถัง/ผนัง/ประตู)', `${(q.internal+q.doorA).toFixed(1)} ตร.ม.`, (q.internal+q.doorA)*u.aluSheetM2]);
+  }
+  const sub = lines.reduce((s,l)=>s+l[2], 0);
+  lines.push([`ค่าประกอบ ${u.assyPct}%`, '', sub*u.assyPct/100]);
+  const total = sub*(1+u.assyPct/100);
+  return { lines, total, kg };
+}
+
+const baht = v => (Math.round(v/100)*100).toLocaleString('th-TH');
+function updateCost(){
+  if(!layout.W) return;
+  const q = costQuantities();
+  // ตารางเทียบทั้ง 3 แบบ
+  const all = Object.keys(COST).map(k=>({ k, ...costOf(k,q) }));
+  let cmp = '<tr><th>แบบ</th><th>น้ำหนัก</th><th>ราคาโครงสร้าง</th></tr>';
+  all.forEach(r=>{
+    cmp += `<tr style="${r.k===costSel?'background:#22303c':''}"><td>${COST[r.k].short}${COST[r.k].rec?' <small class="ok">★ นิยม</small>':''}</td>
+      <td>${r.kg.toFixed(0)} กก.</td><td><b>฿${baht(r.total)}</b></td></tr>`;
+  });
+  document.getElementById('costCmp').innerHTML = cmp;
+  // รายละเอียดแบบที่เลือก
+  const sel = all.find(r=>r.k===costSel);
+  let t = '<tr><th>รายการ</th><th>ปริมาณ</th><th>บาท</th></tr>';
+  sel.lines.forEach(l=>{ t += `<tr><td style="font-size:11px">${l[0]}</td><td>${l[1]}</td><td>${baht(l[2])}</td></tr>`; });
+  t += `<tr><td><b>รวม (${COST[costSel].short})</b></td><td>${sel.kg.toFixed(0)} กก.</td><td><b>${baht(sel.total)}</b></td></tr>`;
+  document.getElementById('costTbl').innerHTML = t;
+  document.getElementById('costNote').innerHTML =
+    `คำนวณจากตู้ ${(q.Wm*100).toFixed(0)}×${(q.Hc*100+P.baseH).toFixed(0)}×${(q.Dm*100).toFixed(0)} ซม. · ผิวรวม ${q.area.toFixed(1)} ตร.ม. · โครง ${q.frameLen.toFixed(1)} ม.<br>
+     ราคาเป็น<b>ค่าประมาณ ±30%</b> ใช้เทียบทางเลือก ไม่ใช่ใบเสนอราคา · ไม่รวมจอ, PLC, กลอนไฟฟ้า, กล้อง, จานหมุน, โซลาร์, ขนส่ง/ติดตั้ง`;
+}
+function renderCostInputs(){
+  const sel = document.getElementById('costOpt');
+  sel.innerHTML = Object.entries(COST).map(([k,o])=>`<option value="${k}">${o.name}${o.rec?' ★':''}</option>`).join('');
+  sel.value = costSel;
+  sel.onchange = ()=>{ costSel = sel.value; renderCostInputs(); updateCost(); };
+  const g = document.getElementById('gCost'); g.innerHTML = '';
+  Object.entries(COST[costSel].u).forEach(([k,o])=>{
+    const l = document.createElement('label'); l.textContent = o.t;
+    const i = document.createElement('input'); i.type='number'; i.min='0'; i.step='1'; i.value=o.v;
+    i.onchange = ()=>{ const v=parseFloat(i.value); if(v>=0){ o.v=v; updateCost(); } else i.value=o.v; };
+    g.append(l,i);
+  });
+}
+
 function updateClearance(){
   const inD = P.depth - P.frame;                // ลึกภายในช่อง (หักผนังหลัง)
   const rowH = { '7':P.row7, '12.5':P.row12, '15':P.row15 };
@@ -1180,6 +1307,7 @@ function tick(){
 }
 
 try { await document.fonts.load(`800 40px "Noto Sans Thai"`); } catch(e){}
+renderCostInputs();
 buildMachine();
 window.gasSim = { PLC, inspect, setM, doors };   // สำหรับทดสอบผ่าน console
 tick();
