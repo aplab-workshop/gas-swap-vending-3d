@@ -1,0 +1,802 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ตู้แลกถังแก๊ส 3D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#11151a; --panel:#1a2027ee; --line:#2c353f; --text:#e6ebf0; --muted:#94a1ae;
+    --accent:#22b45a; --warn:#ffb020; --bad:#ff5a5a; --measure:#ffd400;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+    font-family:"Noto Sans Thai","Leelawadee UI",Tahoma,sans-serif;overflow:hidden}
+  #app{position:fixed;inset:0}
+  #panel{position:fixed;top:12px;left:12px;width:330px;max-height:calc(100% - 24px);overflow:auto;
+    background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;
+    backdrop-filter:blur(6px);font-size:13px;z-index:5}
+  #panel h1{font-size:16px;margin:0 0 2px}
+  #panel .sub{color:var(--muted);font-size:12px;margin-bottom:10px}
+  details{border-top:1px solid var(--line);padding:8px 0}
+  summary{cursor:pointer;font-weight:600;list-style:none}
+  summary::before{content:"▸ ";color:var(--muted)}
+  details[open] summary::before{content:"▾ "}
+  .grid{display:grid;grid-template-columns:1fr 78px;gap:4px 8px;align-items:center;margin-top:8px}
+  .grid label{color:var(--muted)}
+  input[type=number]{width:100%;background:#0e1216;border:1px solid var(--line);color:var(--text);
+    border-radius:6px;padding:4px 6px;font:inherit}
+  .btns{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+  button{background:#26303a;color:var(--text);border:1px solid var(--line);border-radius:8px;
+    padding:6px 10px;font:inherit;cursor:pointer}
+  button:hover{background:#2f3b47}
+  button.on{background:var(--accent);border-color:var(--accent);color:#04130a;font-weight:600}
+  button.measure.on{background:var(--measure);border-color:var(--measure);color:#1a1500}
+  table{width:100%;border-collapse:collapse;margin-top:8px;font-size:12px}
+  th,td{padding:4px 3px;border-bottom:1px solid var(--line);text-align:right}
+  th:first-child,td:first-child{text-align:left}
+  th{color:var(--muted);font-weight:600}
+  .ok{color:var(--accent)} .tight{color:var(--warn)} .bad{color:var(--bad);font-weight:700}
+  #mlist{margin-top:6px}
+  .mrow{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--line)}
+  .mrow b{color:var(--measure)}
+  .mrow small{color:var(--muted);display:block}
+  .mrow button{padding:2px 8px}
+  #status{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);background:var(--panel);
+    border:1px solid var(--line);border-radius:999px;padding:6px 14px;font-size:13px;white-space:nowrap;z-index:5;
+    max-width:calc(100% - 24px);overflow:hidden;text-overflow:ellipsis}
+  #keys{color:var(--muted);font-size:11px;margin-top:8px;line-height:1.6}
+  kbd{background:#0e1216;border:1px solid var(--line);border-radius:4px;padding:0 4px}
+  .lbl{font-family:"Noto Sans Thai",Tahoma,sans-serif;font-size:12px;padding:2px 7px;border-radius:6px;
+    white-space:nowrap;pointer-events:none;font-weight:600}
+  .lbl.m{background:var(--measure);color:#1a1500}
+  .lbl.d{background:#0d1a2bcc;color:#7fc4ff;border:1px solid #2b5a85}
+  #toggle{display:none;position:fixed;top:12px;left:12px;z-index:6}
+  @media (max-width:640px){
+    #panel{width:calc(100% - 24px);max-height:55%;top:auto;bottom:56px}
+    #panel.hide{display:none}
+    #toggle{display:block}
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<button id="toggle">☰ เมนู</button>
+
+<div id="panel">
+  <h1>ต้นแบบตู้แลกถังแก๊ส 24 ชม.</h1>
+  <div class="sub">หน่วย: เซนติเมตร (1 หน่วย 3D = 1 ซม.) · กริดพื้น = 10 ซม.</div>
+
+  <div class="btns">
+    <button id="bMeasure" class="measure">📏 วัดระยะ (M)</button>
+    <button id="bRotate" class="on">⟳ หมุน (R)</button>
+    <button id="bDoors">🚪 เปิดประตู (O)</button>
+    <button id="bXray">👁 โปร่งใส (X)</button>
+    <button id="bDims" class="on">↔ ขนาดรวม</button>
+    <button id="bSnap" class="on">🧲 Snap มุม</button>
+  </div>
+
+  <details open>
+    <summary>การวัดระยะ</summary>
+    <div class="btns">
+      <button id="bClear">ลบทั้งหมด</button>
+      <button id="bCsv">ดาวน์โหลด CSV</button>
+    </div>
+    <div id="mlist"><div style="color:var(--muted)">ยังไม่มีการวัด — กด 📏 แล้วคลิก 2 จุดบนโมเดล</div></div>
+  </details>
+
+  <details open>
+    <summary>ตรวจระยะเผื่อ ถัง vs ช่อง</summary>
+    <table id="clr"></table>
+    <div style="color:var(--muted);font-size:11px;margin-top:4px">
+      เขียว ≥ 4 ซม. · ส้ม 0–4 ซม. · แดง = ใส่ไม่ได้
+    </div>
+  </details>
+
+  <details>
+    <summary>ขนาดตู้ (ซม.)</summary>
+    <div class="grid" id="gMachine"></div>
+  </details>
+
+  <details>
+    <summary>ขนาดถังแก๊ส (ซม.)</summary>
+    <div class="grid" id="gTank"></div>
+  </details>
+
+  <div id="keys">
+    <kbd>คลิกซ้าย</kbd> หมุนมุมมอง · <kbd>คลิกขวา</kbd> เลื่อน · <kbd>ล้อเมาส์</kbd> ซูม<br>
+    โหมดวัด: คลิกจุดที่ 1 → จุดที่ 2 · <kbd>Esc</kbd> ยกเลิก · <kbd>Ctrl+Z</kbd> ลบอันล่าสุด
+  </div>
+</div>
+
+<div id="status">พร้อม</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+/* ============================================================
+   1) พารามิเตอร์ (ซม.)
+   ============================================================ */
+const P = {
+  colW: 42,      // ความกว้างภายในช่อง 1 คอลัมน์
+  depth: 100,    // ความลึกตู้ทั้งหมด
+  frame: 3,      // ความหนาโครง/ผนังกั้น
+  baseH: 12,     // ฐาน + ขาตั้ง
+  rowAcc: 30,    // แถวอุปกรณ์เสริม (บนสุด)
+  row7: 56,      // แถวถัง 7 กก.
+  row12: 66,     // แถวถัง 12.5 กก.
+  row15: 76,     // แถวถัง 15 กก.
+  headerH: 34,   // ป้ายหัวตู้
+  roofH: 6,      // หลังคาโซลาร์
+};
+const P_LABEL = {
+  colW:'กว้างช่อง (ภายใน)', depth:'ลึกตู้', frame:'ความหนาโครง', baseH:'สูงฐาน',
+  rowAcc:'สูงแถวอุปกรณ์', row7:'สูงแถว 7 กก.', row12:'สูงแถว 12.5 กก.', row15:'สูงแถว 15 กก.',
+  headerH:'สูงป้ายหัวตู้', roofH:'หนาหลังคา',
+};
+// ข้อมูลจากตาราง (ใช้ค่าบนของช่วง = กรณีแย่สุด)
+const TANKS = {
+  '4':    { d:27, h:40,   color:0x2d7be0, name:'ถัง 4 กก.' },   // ค่าประมาณ — ปรับได้ในแผง "ขนาดถังแก๊ส"
+  '7':    { d:30, h:48,   color:0x1f5fbf, name:'ถัง 7 กก. (กะปุ๊กลุก)' },
+  '12.5': { d:30, h:58.5, color:0x2a6fd6, name:'ถัง 12.5 กก.' },
+  '15':   { d:32, h:68,   color:0x1d56ad, name:'ถัง 15 กก.' },
+};
+const DOOR_GAP = 1, DOOR_T = 2;
+// ช่องที่ใส่ถังต่างจากขนาดแถว (ขนาดช่องคงเดิม) — key = 'แถว:คอลัมน์' (คอลัมน์ 1–3 จากซ้าย)
+const CELL_KIND = { '7:1':'4', '7:2':'4', '12.5:1':'7' };
+const cellKind = (row, col) => CELL_KIND[`${row}:${col}`] ?? row;
+// จอสัมผัส MicroTouch M1-27OF-A2 (ตามสเปกผู้ผลิต, หน่วย มม.) — ติดตั้งแนวตั้ง
+// active area ไม่ได้ระบุในหน้าสินค้า → ประมาณจากจอ 27" 16:9 มาตรฐาน (597.9 × 336.3 มม.)
+const SCREEN = { model:'M1-27OF-A2', W:619.1, H:368.7, D:39.4, activeW:597.9, activeH:336.3,
+                 res:'1920×1080', weight:7.3, vesa:'100×100 / 200×100', topMargin:4 /* ซม. จากขอบบนคีออสก์ */ };
+
+/* ============================================================
+   2) Scene / Renderer
+   ============================================================ */
+const app = document.getElementById('app');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x161b21);
+scene.fog = new THREE.Fog(0x161b21, 900, 2200);
+
+const camera = new THREE.PerspectiveCamera(40, innerWidth/innerHeight, 1, 5000);
+camera.position.set(330, 230, 420);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+app.appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position:'fixed', inset:'0', pointerEvents:'none' });
+app.appendChild(labelRenderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 130, 0);
+controls.enableDamping = true;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 1.2;
+controls.maxPolarAngle = Math.PI * 0.495;
+controls.minDistance = 40;
+controls.maxDistance = 1500;
+
+scene.add(new THREE.HemisphereLight(0xdfeaff, 0x30302a, 0.9));
+const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+sun.position.set(250, 500, 350);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left:-300, right:300, top:400, bottom:-100, near:10, far:1500 });
+scene.add(sun);
+const fill = new THREE.DirectionalLight(0xbfd4ff, 0.6);
+fill.position.set(-300, 200, -200);
+scene.add(fill);
+
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(1200, 1200),
+  new THREE.MeshStandardMaterial({ color:0x2a3038, roughness:0.95 }));
+ground.rotation.x = -Math.PI/2;
+ground.receiveShadow = true;
+ground.userData.name = 'พื้น';
+scene.add(ground);
+const grid = new THREE.GridHelper(600, 60, 0x4a5563, 0x343c46);
+grid.position.y = 0.05;
+scene.add(grid);
+
+/* ============================================================
+   3) Texture helpers (วาดป้ายด้วย Canvas)
+   ============================================================ */
+const FONT = '"Noto Sans Thai","Leelawadee UI",Tahoma,sans-serif';
+const PX = 8; // pixel ต่อ ซม.
+function canvasTex(wcm, hcm, draw){
+  const c = document.createElement('canvas');
+  c.width = Math.max(16, Math.round(wcm*PX)); c.height = Math.max(16, Math.round(hcm*PX));
+  const g = c.getContext('2d');
+  draw(g, c.width, c.height);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return t;
+}
+function rr(g,x,y,w,h,r,fill,stroke){
+  g.beginPath(); g.roundRect(x,y,w,h,r);
+  if(fill){ g.fillStyle=fill; g.fill(); }
+  if(stroke){ g.strokeStyle=stroke; g.lineWidth=PX*0.4; g.stroke(); }
+}
+function vents(g,x,y,w,h){
+  const cols=8, rows=Math.max(2, Math.floor(h/(PX*4)));
+  const cw=w/cols, ch=h/rows;
+  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++)
+    rr(g, x+c*cw+cw*0.15, y+r*ch+ch*0.3, cw*0.7, ch*0.4, 3, '#9aa3ab');
+}
+function bottleIcon(g,cx,cy,s,col){
+  g.fillStyle=col;
+  rr(g,cx-s*0.35,cy-s*0.3,s*0.7,s*0.85,s*0.25,col);
+  g.fillRect(cx-s*0.15,cy-s*0.5,s*0.3,s*0.25);
+}
+function doorFace(kind, wcm, hcm){
+  return canvasTex(wcm, hcm, (g,W,H)=>{
+    g.fillStyle='#d5dade'; g.fillRect(0,0,W,H);
+    rr(g,4,4,W-8,H-8,10,null,'#aab2ba');
+    const m=W*0.06;
+    if(kind==='inspect'){
+      rr(g,m,m,W-2*m,H*0.32,12,'#f7c21b');
+      g.fillStyle='#3a2a00'; g.font=`800 ${W*0.11}px ${FONT}`; g.textBaseline='middle';
+      g.fillText('ช่องตรวจถัง', m+W*0.06, m+H*0.11);
+      g.font=`600 ${W*0.065}px ${FONT}`;
+      g.fillText('QR · น้ำหนัก · AI', m+W*0.06, m+H*0.23);
+      rr(g,m+4,m-6,W-2*m-8,H*0.32+12,14,null,'#e0a800');
+    }else{
+      const label = kind+' กก.';
+      rr(g,m,m,W-2*m,H*0.34,12,'#1f9b4c');
+      bottleIcon(g, m+W*0.15, m+H*0.15, W*0.16, '#fff');
+      g.fillStyle='#fff'; g.textBaseline='middle';
+      g.font=`800 ${W*0.15}px ${FONT}`;
+      g.fillText(label, m+W*0.28, m+H*0.12);
+      g.font=`600 ${W*0.065}px ${FONT}`;
+      g.fillText('แลกถัง ฿[ราคา]', m+W*0.28, m+H*0.25);
+    }
+    // LED + มือจับ
+    g.fillStyle = kind==='inspect' ? '#f7c21b' : '#2bd36b';
+    g.beginPath(); g.arc(m+W*0.05, H*0.45, W*0.025, 0, Math.PI*2); g.fill();
+    rr(g, W*0.68, H*0.435, W*0.22, H*0.025, 4, '#4a525a');
+    vents(g, m, H*0.52, W-2*m, H*0.44);
+  });
+}
+// แผงคีออสก์ (ตัวจอเป็นชิ้น 3D แยก) — วาด QR + ลำโพง ใต้จอ เริ่มที่ topCm จากขอบบน
+function kioskFace(wcm,hcm,topCm){
+  return canvasTex(wcm,hcm,(g,W,H)=>{
+    g.fillStyle='#22272d'; g.fillRect(0,0,W,H);
+    const y0 = topCm*PX, s = Math.min(W*0.3, (H-y0)*0.5);
+    rr(g,W*0.1,y0,s,s,8,'#0e1114','#59636d');
+    rr(g,W*0.1+s*0.2,y0+s*0.2,s*0.6,s*0.6,4,null,'#8fd3ff');
+    g.fillStyle='#59636d';
+    for(let r=0;r<4;r++) for(let c=0;c<4;c++){
+      g.beginPath(); g.arc(W*0.6+c*W*0.07, y0+W*0.03+r*W*0.07, W*0.018, 0, Math.PI*2); g.fill();
+    }
+    g.fillStyle='#9aa3ab'; g.font=`600 ${W*0.05}px ${FONT}`; g.textAlign='center'; g.textBaseline='middle';
+    g.fillText('สแกน QR', W*0.1+s/2, y0+s+W*0.06); g.fillText('ลำโพง', W*0.705, y0+W*0.36);
+  });
+}
+// หน้าจอสัมผัส M1-27OF-A2 แนวตั้ง: กรอบดำ + พื้นที่แสดงผล
+function screenFace(){
+  const S = SCREEN, wcm = S.H/10, hcm = S.W/10;            // แนวตั้ง: สลับ W/H
+  const aw = S.activeH/10, ah = S.activeW/10;
+  return canvasTex(wcm,hcm,(g,W,H)=>{
+    g.fillStyle='#050607'; g.fillRect(0,0,W,H);
+    const bx=(wcm-aw)/2*PX, by=(hcm-ah)/2*PX, AW=aw*PX, AH=ah*PX;
+    g.save(); g.translate(bx,by);
+    g.fillStyle='#f4f7f5'; g.fillRect(0,0,AW,AH);
+    g.fillStyle='#1f9b4c'; g.fillRect(0,0,AW,AH*0.06);
+    g.fillStyle='#fff'; g.font=`700 ${AW*0.06}px ${FONT}`; g.textAlign='center'; g.textBaseline='middle';
+    g.fillText('ST-014', AW/2, AH*0.03);
+    const sq=(x,y,s,c)=>{g.fillStyle=c;g.fillRect(x,y,s,s);};
+    sq(AW*0.08,AH*0.10,AW*0.18,'#1f9b4c'); sq(AW*0.30,AH*0.13,AW*0.12,'#8bc34a');
+    sq(AW*0.58,AH*0.10,AW*0.12,'#c8e6c9'); sq(AW*0.72,AH*0.15,AW*0.16,'#1f9b4c');
+    g.fillStyle='#183b26'; g.textAlign='left'; g.font=`800 ${AW*0.1}px ${FONT}`;
+    g.fillText('แลกถังแก๊ส', AW*0.08, AH*0.36);
+    g.fillText('ได้เอง 24 ชม.', AW*0.08, AH*0.43);
+    rr(g,AW*0.08,AH*0.55,AW*0.84,AH*0.07,12,'#1f9b4c');
+    g.fillStyle='#fff'; g.textAlign='center'; g.font=`700 ${AW*0.075}px ${FONT}`;
+    g.fillText('แตะเพื่อเริ่ม', AW/2, AH*0.585);
+    g.fillStyle='#9aa3ab'; g.font=`600 ${AW*0.04}px ${FONT}`;
+    g.fillText(`27" ${S.res} · แนวตั้ง`, AW/2, AH*0.95);
+    g.restore();
+  });
+}
+const ACC = [
+  { t:'สายแก๊ส',       icon:'ring' },
+  { t:'หัวปรับแรงดัน', icon:'reg'  },
+  { t:'เข็มขัดรัดสาย', icon:'clip' },
+  { t:'ถังขายขาด',     icon:'tank' },
+];
+function accFace(i,wcm,hcm){
+  return canvasTex(wcm,hcm,(g,W,H)=>{
+    g.fillStyle='#eef2f5'; g.fillRect(0,0,W,H);
+    rr(g,4,4,W-8,H-8,10,null,'#aab2ba');
+    const cx=W/2, cy=H*0.4, s=H*0.28;
+    g.strokeStyle='#3d454d'; g.fillStyle='#3d454d'; g.lineWidth=s*0.18;
+    const ic=ACC[i].icon;
+    if(ic==='ring'){ g.beginPath(); g.arc(cx,cy,s,0,7); g.stroke(); g.beginPath(); g.arc(cx,cy,s*0.5,0,7); g.stroke(); }
+    if(ic==='reg'){ rr(g,cx-s*1.1,cy-s*0.3,s*1.4,s*0.6,s*0.2,'#3d454d'); g.beginPath(); g.arc(cx+s*0.5,cy,s*0.6,0,7); g.fill();
+                    g.fillStyle='#eef2f5'; g.beginPath(); g.arc(cx+s*0.5,cy,s*0.25,0,7); g.fill(); }
+    if(ic==='clip'){ rr(g,cx-s*1.1,cy-s*0.5,s*2.2,s*0.35,s*0.15,'#3d454d'); rr(g,cx-s*1.1,cy+s*0.15,s*2.2,s*0.35,s*0.15,'#3d454d'); }
+    if(ic==='tank'){ g.fillStyle='#7c858e'; bottleIcon(g,cx,cy,s*1.5,'#7c858e'); }
+    rr(g,W*0.05,H*0.74,W*0.9,H*0.2,6,'#ffffff');
+    g.fillStyle='#2a3036'; g.font=`600 ${Math.min(W*0.1,H*0.13)}px ${FONT}`;
+    g.textAlign='center'; g.textBaseline='middle'; g.fillText(ACC[i].t, cx, H*0.84);
+  });
+}
+function headerFace(wcm,hcm){
+  return canvasTex(wcm,hcm,(g,W,H)=>{
+    const gr=g.createLinearGradient(0,0,0,H); gr.addColorStop(0,'#26a957'); gr.addColorStop(1,'#167a3c');
+    g.fillStyle=gr; g.fillRect(0,0,W,H);
+    g.fillStyle='#8fd14f'; g.fillRect(0,H*0.9,W,H*0.1);
+    g.fillStyle='#fff'; g.beginPath(); g.arc(H*0.55,H*0.45,H*0.3,0,7); g.fill();
+    g.fillStyle='#1f9b4c'; g.font=`800 ${H*0.3}px ${FONT}`; g.textAlign='center'; g.textBaseline='middle';
+    g.fillText('GS', H*0.55, H*0.47);
+    g.fillStyle='#fff'; g.textAlign='left'; g.font=`800 ${Math.min(H*0.36, W*0.05)}px ${FONT}`;
+    g.fillText('สถานีแลกถังแก๊ส 24 ชม.', H*1.0, H*0.47);
+  });
+}
+function solarFace(wcm,hcm){
+  return canvasTex(wcm,hcm,(g,W,H)=>{
+    g.fillStyle='#16233f'; g.fillRect(0,0,W,H);
+    const cols=12, rows=6;
+    for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){
+      g.fillStyle = (r+c)%2 ? '#1e3566' : '#203a70';
+      g.fillRect(c*W/cols+2, r*H/rows+2, W/cols-4, H/rows-4);
+    }
+    g.strokeStyle='#8aa0c8'; g.lineWidth=3;
+    for(let c=1;c<3;c++){ g.beginPath(); g.moveTo(c*W/3,0); g.lineTo(c*W/3,H); g.stroke(); }
+  });
+}
+
+/* ============================================================
+   4) โมเดลถังแก๊ส (Lathe)
+   ============================================================ */
+function makeTank(key){
+  const spec = TANKS[key];
+  const { d, h, color } = spec, r = d/2;
+  const grp = new THREE.Group();
+  const bodyMat = new THREE.MeshStandardMaterial({ color, roughness:0.35, metalness:0.3 });
+  const darkMat = new THREE.MeshStandardMaterial({ color:new THREE.Color(color).multiplyScalar(0.75), roughness:0.45, metalness:0.3, side:THREE.DoubleSide });
+  const footH = h*0.09, collarH = h*0.14, bodyTop = h - collarH*0.7;
+  const shoulder = bodyTop - r*0.5;
+  const pts = [ new THREE.Vector2(0.01, footH-1), new THREE.Vector2(r*0.75, footH-0.5),
+                new THREE.Vector2(r*0.97, footH+1.5), new THREE.Vector2(r, footH+4), new THREE.Vector2(r, shoulder) ];
+  for(let i=1;i<=10;i++){
+    const t=i/10*Math.PI/2;
+    pts.push(new THREE.Vector2(r*0.28 + r*0.72*Math.cos(t), shoulder + (bodyTop-shoulder)*Math.sin(t)));
+  }
+  pts.push(new THREE.Vector2(0.01, bodyTop));
+  const body = new THREE.Mesh(new THREE.LatheGeometry(pts, 48), bodyMat);
+  const foot = new THREE.Mesh(new THREE.CylinderGeometry(r*0.8, r*0.84, footH, 40, 1, true), darkMat);
+  foot.position.y = footH/2;
+  const collar = new THREE.Mesh(new THREE.CylinderGeometry(r*0.5, r*0.5, collarH, 36, 1, true), darkMat);
+  collar.position.y = h - collarH/2;
+  const valve = new THREE.Mesh(new THREE.CylinderGeometry(2, 2.4, 7, 16),
+    new THREE.MeshStandardMaterial({ color:0xc9a54a, metalness:0.8, roughness:0.3 }));
+  valve.position.y = bodyTop + 3;
+  // แถบสีขาว (ฉลาก)
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(r+0.15, r+0.15, h*0.12, 48, 1, true),
+    new THREE.MeshStandardMaterial({ color:0xf2f4f7, roughness:0.6 }));
+  band.position.y = footH + (shoulder-footH)*0.55;
+  [body,foot,collar,valve,band].forEach(m=>{ m.castShadow=true; m.receiveShadow=true; m.userData.name = `${spec.name} — Ø${d} × ส.${h} ซม.`; grp.add(m); });
+  return grp;
+}
+
+/* ============================================================
+   5) สร้างตู้ทั้งหมด (rebuild ได้เมื่อเปลี่ยนพารามิเตอร์)
+   ============================================================ */
+let machine = null;
+const doors = [];         // { pivot, open:0..1 }
+const xrayMats = [];      // วัสดุที่ทำโปร่งใสได้
+let layout = {};
+const state = { doorsOpen:false, xray:false, dims:true, measure:false, snap:true };
+
+function disposeTree(o){
+  o.traverse(n=>{
+    if(n.geometry) n.geometry.dispose();
+    if(n.material){ (Array.isArray(n.material)?n.material:[n.material]).forEach(m=>{ m.map?.dispose(); m.dispose(); }); }
+  });
+}
+
+function buildMachine(){
+  if(machine){ scene.remove(machine); disposeTree(machine); }
+  doors.length = 0; xrayMats.length = 0;
+  machine = new THREE.Group();
+  const f=P.frame, D=P.depth, cols=4;
+  const W = cols*P.colW + (cols+1)*f;
+  const rows = [ {key:'15',h:P.row15}, {key:'12.5',h:P.row12}, {key:'7',h:P.row7}, {key:'acc',h:P.rowAcc} ];
+  let y = P.baseH + f;
+  rows.forEach(r=>{ r.y=y; y += r.h + f; });
+  const bodyTop = y;
+  const colX = i => -W/2 + f + i*(P.colW+f);
+  layout = { W, D, rows, bodyTop, colX, H: bodyTop + P.headerH + P.roofH };
+
+  const steel = new THREE.MeshStandardMaterial({ color:0xb9c0c7, roughness:0.5, metalness:0.4 });
+  const steelIn = new THREE.MeshStandardMaterial({ color:0x8d959d, roughness:0.7, metalness:0.2 });
+  const dark = new THREE.MeshStandardMaterial({ color:0x3a4047, roughness:0.6, metalness:0.3 });
+  xrayMats.push(steel, steelIn);
+
+  const box = (w,h,d,mat,x,y,z,name)=>{
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat);
+    m.position.set(x,y,z); m.castShadow=true; m.receiveShadow=true;
+    m.userData.name = name; machine.add(m); return m;
+  };
+  const bodyH = bodyTop - P.baseH;
+  // ฐาน + ขา
+  box(W, P.baseH-4, D, dark, 0, 4+(P.baseH-4)/2, 0, 'ฐานตู้');
+  [-1,1].forEach(sx=>[-1,1].forEach(sz=> box(8,4,8,dark, sx*(W/2-8), 2, sz*(D/2-8), 'ขาตั้ง')));
+  // ผนังข้าง / หลัง
+  box(f, bodyH, D, steel, -W/2+f/2, P.baseH+bodyH/2, 0, 'ผนังข้างซ้าย');
+  box(f, bodyH, D, steel,  W/2-f/2, P.baseH+bodyH/2, 0, 'ผนังข้างขวา');
+  box(W-2*f, bodyH, f, steelIn, 0, P.baseH+bodyH/2, -D/2+f/2, 'ผนังหลัง');
+  // ชั้นแนวนอน
+  box(W-2*f, f, D, steelIn, 0, P.baseH+f/2, 0, 'แผ่นพื้นตู้');
+  rows.forEach(r=> box(W-2*f, f, D, steelIn, 0, r.y+r.h+f/2, 0, 'ชั้นกั้นแนวนอน'));
+  // ผนังกั้นแนวตั้ง
+  rows.forEach(r=>{ for(let i=1;i<cols;i++) box(f, r.h, D-f, steelIn, colX(i)-f/2, r.y+r.h/2, f/2, 'ผนังกั้นช่อง'); });
+
+  // ป้ายหัวตู้
+  const hdrMats = Array(6).fill(steel); hdrMats[4] = new THREE.MeshStandardMaterial({ map:headerFace(W,P.headerH), roughness:0.5 });
+  const hdr = new THREE.Mesh(new THREE.BoxGeometry(W, P.headerH, D), hdrMats);
+  hdr.position.set(0, bodyTop+P.headerH/2, 0); hdr.castShadow = true; hdr.userData.name='ป้ายหัวตู้';
+  machine.add(hdr);
+  // (2) กล้อง CCTV
+  box(14,6,6, new THREE.MeshStandardMaterial({color:0x111111, roughness:0.3}), W/2-20, bodyTop+P.headerH*0.6, D/2+3, 'กล้องวงจรปิด (2)');
+  // (1) หลังคาโซลาร์
+  const roofW=W+12, roofD=D+16;
+  const roofMats = Array(6).fill(new THREE.MeshStandardMaterial({ color:0x2b3a55, metalness:0.5, roughness:0.4 }));
+  roofMats[2] = new THREE.MeshStandardMaterial({ map:solarFace(roofW,roofD), metalness:0.6, roughness:0.25 });
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(roofW, P.roofH, roofD), roofMats);
+  roof.position.set(0, bodyTop+P.headerH+P.roofH/2+2, 2);
+  roof.rotation.x = 0.06; roof.castShadow=true; roof.userData.name='หลังคาแผงโซลาร์ (1)';
+  machine.add(roof);
+
+  // ประตู / ช่อง
+  const addDoor = (x0, y0, w, h, tex, name)=>{
+    const pivot = new THREE.Group();
+    pivot.position.set(x0+DOOR_GAP/2, y0+h/2, D/2+DOOR_T/2);
+    const mats = Array(6).fill(steel);
+    const front = new THREE.MeshStandardMaterial({ map:tex, roughness:0.55, metalness:0.1 });
+    xrayMats.push(front);
+    mats[4] = front;
+    const dw=w-DOOR_GAP, dh=h-DOOR_GAP;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(dw, dh, DOOR_T), mats);
+    m.position.x = dw/2; m.castShadow = true; m.userData.name = name;
+    pivot.add(m); machine.add(pivot);
+    doors.push({ pivot, open: state.doorsOpen?1:0 });
+  };
+
+  rows.forEach(r=>{
+    for(let c=0;c<cols;c++){
+      const x0 = colX(c);
+      if(r.key==='acc'){ addDoor(x0, r.y, P.colW, r.h, accFace(c,P.colW,r.h), `ช่องอุปกรณ์: ${ACC[c].t} (3)`); continue; }
+      if(c===0){
+        if(r.key==='15') addDoor(x0, r.y, P.colW, r.h, doorFace('inspect',P.colW,r.h), 'ช่องตรวจถัง QR/น้ำหนัก/AI (6)');
+        continue; // ช่อง 7 และ 12.5 คอลัมน์ 0 = ตู้คีออสก์
+      }
+      const kind = cellKind(r.key, c);
+      addDoor(x0, r.y, P.colW, r.h, doorFace(kind,P.colW,r.h), `ช่องถัง ${kind} กก. (แถว ${r.key}, คอลัมน์ ${c+1})`);
+      const t = makeTank(kind);
+      t.position.set(x0+P.colW/2, r.y, -f/2 - 2);
+      machine.add(t);
+    }
+  });
+  // (4) คีออสก์หน้าจอ — ครอบแถว 7 + 12.5 คอลัมน์ 0
+  const rk12 = rows[1], rk7 = rows[2];
+  const kH = rk7.y + rk7.h - rk12.y;
+  const sW = SCREEN.H/10, sH = SCREEN.W/10, sD = SCREEN.D/10;   // แนวตั้ง (ซม.)
+  const sTop = SCREEN.topMargin;
+  const kMats = Array(6).fill(dark); kMats[4] = new THREE.MeshStandardMaterial({ map:kioskFace(P.colW,kH,sTop+sH+3), roughness:0.35 });
+  const kiosk = new THREE.Mesh(new THREE.BoxGeometry(P.colW, kH, D-f), kMats);
+  kiosk.position.set(colX(0)+P.colW/2, rk12.y+kH/2, f/2+DOOR_T/2);
+  kiosk.castShadow = true; kiosk.userData.name = 'คีออสก์ + สแกน QR (4)';
+  machine.add(kiosk);
+  // จอ M1-27OF-A2 ฝังในแผงคีออสก์ ยื่นออกมา 0.5 ซม.
+  const kFront = D/2 + DOOR_T/2;
+  const scrMats = Array(6).fill(new THREE.MeshStandardMaterial({ color:0x0b0c0e, roughness:0.4, metalness:0.5 }));
+  scrMats[4] = new THREE.MeshStandardMaterial({ map:screenFace(), roughness:0.15, metalness:0.0, emissive:0xffffff, emissiveIntensity:0.12 });
+  scrMats[4].emissiveMap = scrMats[4].map;
+  const scr = new THREE.Mesh(new THREE.BoxGeometry(sW, sH, sD), scrMats);
+  scr.position.set(colX(0)+P.colW/2, rk12.y + kH - sTop - sH/2, kFront - sD/2 + 0.5);
+  scr.castShadow = true;
+  scr.userData.name = `จอสัมผัส ${SCREEN.model} 27" แนวตั้ง — ${sW.toFixed(2)} × ${sH.toFixed(2)} × ${sD.toFixed(2)} ซม.`;
+  machine.add(scr);
+  layout.kioskH = kH;
+
+  // (8) ตู้ถังดับเพลิงด้านซ้าย + เซนเซอร์แก๊ส
+  const red = new THREE.MeshStandardMaterial({ color:0xd8282f, roughness:0.45, metalness:0.2 });
+  const feX = -W/2 - 13;
+  box(26, 70, 20, red, feX, P.baseH+rows[1].y-P.baseH+20, 0, 'ตู้ถังดับเพลิง (8)');
+  const ext = new THREE.Mesh(new THREE.CylinderGeometry(6,6,48,24),
+    new THREE.MeshStandardMaterial({ color:0xb01016, roughness:0.3, metalness:0.3 }));
+  ext.position.set(feX, rows[1].y+20, 10.5); ext.scale.z = 0.25; ext.userData.name='ถังดับเพลิง'; machine.add(ext);
+  box(8,5,4, new THREE.MeshStandardMaterial({color:0xf3f3f3}), feX, rows[1].y-28, 0, 'เซนเซอร์ตรวจจับแก๊สรั่ว');
+
+  machine.traverse(n=>{ if(n.isMesh) n.userData.pickable = true; });
+  scene.add(machine);
+  applyXray();
+  buildDims();
+  updateClearance();
+  controls.target.set(0, layout.H*0.48, 0);
+}
+
+/* ============================================================
+   6) เส้นบอกขนาดรวม
+   ============================================================ */
+const dimGroup = new THREE.Group(); scene.add(dimGroup);
+function makeLabel(text, cls){
+  const el = document.createElement('div'); el.className = 'lbl '+cls; el.textContent = text;
+  return new CSS2DObject(el);
+}
+function dimLine(a, b, offset, text){
+  const mat = new THREE.LineBasicMaterial({ color:0x5fb3ff, depthTest:false, transparent:true });
+  const A=a.clone().add(offset), B=b.clone().add(offset);
+  const g = new THREE.BufferGeometry().setFromPoints([a, A, A, B, B, b]);
+  const l = new THREE.LineSegments(g, mat); l.renderOrder = 10; dimGroup.add(l);
+  const lab = makeLabel(text, 'd'); lab.position.copy(A).lerp(B, 0.5); dimGroup.add(lab);
+}
+function clearGroup(gp){
+  [...gp.children].forEach(c=>{ gp.remove(c); c.geometry?.dispose(); c.material?.dispose(); if(c.element) c.element.remove(); });
+}
+function buildDims(){
+  clearGroup(dimGroup);
+  const { W, D, H } = layout;
+  const fz = D/2 + 2;
+  dimLine(new THREE.Vector3(-W/2,0,fz), new THREE.Vector3(W/2,0,fz), new THREE.Vector3(0,0,25), `กว้าง ${W.toFixed(1)} ซม.`);
+  dimLine(new THREE.Vector3(W/2,0,fz), new THREE.Vector3(W/2,H,fz), new THREE.Vector3(25,0,0), `สูง ${H.toFixed(1)} ซม.`);
+  dimLine(new THREE.Vector3(W/2,0,-D/2), new THREE.Vector3(W/2,0,D/2), new THREE.Vector3(25,0,0), `ลึก ${D.toFixed(1)} ซม.`);
+  dimGroup.visible = state.dims;
+}
+
+/* ============================================================
+   7) ตารางตรวจระยะเผื่อ
+   ============================================================ */
+function updateClearance(){
+  const inD = P.depth - P.frame;                // ลึกภายในช่อง (หักผนังหลัง)
+  const rowH = { '7':P.row7, '12.5':P.row12, '15':P.row15 };
+  const cls = v => v < 0 ? 'bad' : v < 4 ? 'tight' : 'ok';
+  let html = '<tr><th>ถัง</th><th>เผื่อกว้าง</th><th>เผื่อสูง</th><th>เผื่อลึก</th></tr>';
+  // ทุกคู่ (ถัง, แถว) ที่มีอยู่จริงในตู้
+  const seen = new Set();
+  for(const row of ['7','12.5','15']) for(let c=1;c<4;c++){
+    const k = cellKind(row, c), id = k+'@'+row;
+    if(seen.has(id)) continue; seen.add(id);
+    const t = TANKS[k];
+    const mw = P.colW - t.d, mh = rowH[row] - t.h, md = inD - t.d;
+    const where = k===row ? '' : ` <small style="color:var(--muted)">(แถว ${row})</small>`;
+    html += `<tr><td>${k} กก.${where}</td>${[mw,mh,md].map(v=>`<td class="${cls(v)}">${v.toFixed(1)}</td>`).join('')}</tr>`;
+  }
+  // จอแนวตั้งในคอลัมน์คีออสก์ (สูงหักระยะขอบบน)
+  const sw = SCREEN.H/10, sh = SCREEN.W/10, sd = SCREEN.D/10;
+  const sv = [P.colW - sw, (layout.kioskH ?? 0) - SCREEN.topMargin - sh, inD - sd];
+  html += `<tr><td>จอ 27"</td>${sv.map(v=>`<td class="${cls(v)}">${v.toFixed(1)}</td>`).join('')}</tr>`;
+  document.getElementById('clr').innerHTML = html;
+}
+
+/* ============================================================
+   8) เครื่องมือวัดระยะ
+   ============================================================ */
+const measGroup = new THREE.Group(); scene.add(measGroup);
+const measures = [];   // { a, b, objs:[] }
+let pending = null;    // { a, marker }
+const markerGeo = new THREE.SphereGeometry(1.2, 16, 12);
+const markerMat = new THREE.MeshBasicMaterial({ color:0xffd400, depthTest:false });
+const lineMat = new THREE.LineBasicMaterial({ color:0xffd400, depthTest:false });
+const dashMat = new THREE.LineDashedMaterial({ color:0xffd400, depthTest:false, dashSize:3, gapSize:2 });
+
+const cursor = new THREE.Mesh(markerGeo, new THREE.MeshBasicMaterial({ color:0xffffff, depthTest:false, transparent:true, opacity:0.9 }));
+cursor.renderOrder = 20; cursor.visible = false; scene.add(cursor);
+const previewLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), dashMat);
+previewLine.renderOrder = 19; previewLine.visible = false; scene.add(previewLine);
+const previewLabel = makeLabel('', 'm'); previewLabel.visible = false; scene.add(previewLabel);
+
+const ray = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+const _v = new THREE.Vector3();
+
+function pick(ev){
+  if(!machine) return null;
+  const rect = renderer.domElement.getBoundingClientRect();
+  ndc.set(((ev.clientX-rect.left)/rect.width)*2-1, -((ev.clientY-rect.top)/rect.height)*2+1);
+  ray.setFromCamera(ndc, camera);
+  const targets = [ground];
+  machine.traverse(n=>{ if(n.isMesh && n.userData.pickable) targets.push(n); });
+  const hits = ray.intersectObjects(targets, false);
+  if(!hits.length) return null;
+  const h = hits[0];
+  let p = h.point.clone(), snapped = false;
+  if(state.snap && h.face && h.object !== ground){
+    const pos = h.object.geometry.attributes.position;
+    let best = null, bd = 4; // ระยะ snap 4 ซม.
+    for(const idx of [h.face.a, h.face.b, h.face.c]){
+      _v.fromBufferAttribute(pos, idx).applyMatrix4(h.object.matrixWorld);
+      const dd = _v.distanceTo(h.point);
+      if(dd < bd){ bd = dd; best = _v.clone(); }
+    }
+    if(best){ p = best; snapped = true; }
+  }
+  if(state.snap && h.object === ground){ // snap พื้นเข้ากริด 1 ซม.
+    p.set(Math.round(p.x), 0, Math.round(p.z));
+  }
+  return { point:p, obj:h.object, snapped };
+}
+const fmt = v => v.toFixed(1);
+function measText(a,b){ return `${fmt(a.distanceTo(b))} ซม.`; }
+
+function addMeasure(a, b){
+  const objs = [];
+  [a,b].forEach(p=>{ const m=new THREE.Mesh(markerGeo, markerMat); m.position.copy(p); m.renderOrder=20; measGroup.add(m); objs.push(m); });
+  const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a,b]), lineMat);
+  l.renderOrder = 19; measGroup.add(l); objs.push(l);
+  const lab = makeLabel(`#${measures.length+1}  ${measText(a,b)}`, 'm');
+  lab.position.copy(a).lerp(b,0.5); measGroup.add(lab); objs.push(lab);
+  measures.push({ a:a.clone(), b:b.clone(), objs });
+  renderList();
+}
+function removeMeasure(i){
+  const m = measures[i]; if(!m) return;
+  m.objs.forEach(o=>{ measGroup.remove(o); if(o.isLine) o.geometry.dispose(); if(o.element) o.element.remove(); });
+  measures.splice(i,1);
+  measures.forEach((mm,j)=>{ const lab = mm.objs[3]; lab.element.textContent = `#${j+1}  ${measText(mm.a,mm.b)}`; });
+  renderList();
+}
+function cancelPending(){
+  if(pending){ measGroup.remove(pending.marker); pending = null; }
+  previewLine.visible = false; previewLabel.visible = false;
+}
+function renderList(){
+  const el = document.getElementById('mlist');
+  if(!measures.length){ el.innerHTML = '<div style="color:var(--muted)">ยังไม่มีการวัด — กด 📏 แล้วคลิก 2 จุดบนโมเดล</div>'; return; }
+  el.innerHTML = measures.map((m,i)=>{
+    const d = m.b.clone().sub(m.a);
+    return `<div class="mrow"><div><b>#${i+1} · ${fmt(m.a.distanceTo(m.b))} ซม.</b>
+      <small>ΔX ${fmt(Math.abs(d.x))} · ΔY ${fmt(Math.abs(d.y))} · ΔZ ${fmt(Math.abs(d.z))}</small></div>
+      <button data-del="${i}">✕</button></div>`;
+  }).join('');
+}
+document.getElementById('mlist').addEventListener('click', e=>{
+  const i = e.target.dataset?.del; if(i!==undefined) removeMeasure(+i);
+});
+
+/* ---------- pointer events ---------- */
+const statusEl = document.getElementById('status');
+let downAt = null;
+renderer.domElement.addEventListener('pointerdown', e=>{ downAt = {x:e.clientX, y:e.clientY}; });
+renderer.domElement.addEventListener('pointermove', e=>{
+  const hit = pick(e);
+  if(!hit){ cursor.visible=false; statusEl.textContent = state.measure ? 'โหมดวัด: ชี้ไปที่โมเดล' : 'พร้อม'; return; }
+  const p = hit.point;
+  const name = hit.obj.userData.name || '';
+  const coord = `(x ${fmt(p.x)}, y ${fmt(p.y)}, z ${fmt(p.z)})`;
+  if(state.measure){
+    cursor.visible = true; cursor.position.copy(p);
+    cursor.material.color.set(hit.snapped ? 0x00e5ff : 0xffffff);
+    if(pending){
+      previewLine.geometry.setFromPoints([pending.a, p]); previewLine.computeLineDistances(); previewLine.visible = true;
+      previewLabel.position.copy(pending.a).lerp(p,0.5); previewLabel.element.textContent = measText(pending.a,p); previewLabel.visible = true;
+      statusEl.textContent = `จุดที่ 2: ${measText(pending.a,p)} ${hit.snapped?'· 🧲 snap':''}`;
+    }else{
+      statusEl.textContent = `จุดที่ 1: ${name} ${coord} ${hit.snapped?'· 🧲 snap':''}`;
+    }
+  }else{
+    cursor.visible = false;
+    statusEl.textContent = name ? `${name}  ${coord}` : coord;
+  }
+});
+renderer.domElement.addEventListener('pointerup', e=>{
+  if(!downAt || Math.hypot(e.clientX-downAt.x, e.clientY-downAt.y) > 5 || e.button !== 0) return;
+  if(!state.measure) return;
+  const hit = pick(e); if(!hit) return;
+  if(!pending){
+    const m = new THREE.Mesh(markerGeo, markerMat); m.position.copy(hit.point); m.renderOrder=20; measGroup.add(m);
+    pending = { a:hit.point.clone(), marker:m };
+  }else{
+    const a = pending.a; cancelPending();
+    addMeasure(a, hit.point.clone());
+  }
+});
+
+/* ============================================================
+   9) UI
+   ============================================================ */
+const $ = id => document.getElementById(id);
+function setBtn(id, on){ $(id).classList.toggle('on', on); }
+function toggleMeasure(v = !state.measure){
+  state.measure = v; setBtn('bMeasure', v);
+  if(v){ controls.autoRotate = false; setBtn('bRotate', false); renderer.domElement.style.cursor='crosshair'; }
+  else { cancelPending(); cursor.visible=false; renderer.domElement.style.cursor=''; }
+}
+function toggleRotate(v = !controls.autoRotate){ controls.autoRotate = v; setBtn('bRotate', v); }
+function toggleDoors(v = !state.doorsOpen){ state.doorsOpen = v; setBtn('bDoors', v); }
+function applyXray(){
+  xrayMats.forEach(m=>{ m.transparent = state.xray; m.opacity = state.xray ? 0.22 : 1; m.depthWrite = !state.xray; m.needsUpdate = true; });
+}
+function toggleXray(v = !state.xray){ state.xray = v; setBtn('bXray', v); applyXray(); }
+
+$('bMeasure').onclick = ()=>toggleMeasure();
+$('bRotate').onclick  = ()=>toggleRotate();
+$('bDoors').onclick   = ()=>toggleDoors();
+$('bXray').onclick    = ()=>toggleXray();
+$('bDims').onclick    = ()=>{ state.dims=!state.dims; dimGroup.visible=state.dims; setBtn('bDims',state.dims); };
+$('bSnap').onclick    = ()=>{ state.snap=!state.snap; setBtn('bSnap',state.snap); };
+$('bClear').onclick   = ()=>{ cancelPending(); while(measures.length) removeMeasure(measures.length-1); };
+$('bCsv').onclick     = ()=>{
+  const rows = [['no','distance_cm','dx','dy','dz','ax','ay','az','bx','by','bz']];
+  measures.forEach((m,i)=>{ const d=m.b.clone().sub(m.a);
+    rows.push([i+1, m.a.distanceTo(m.b), Math.abs(d.x), Math.abs(d.y), Math.abs(d.z), m.a.x,m.a.y,m.a.z, m.b.x,m.b.y,m.b.z].map(v=>typeof v==='number'?+v.toFixed(2):v)); });
+  rows.push([]); rows.push(['param','value_cm']); Object.entries(P).forEach(([k,v])=>rows.push([k,v]));
+  Object.entries(TANKS).forEach(([k,t])=>{ rows.push([`tank_${k}_d`,t.d]); rows.push([`tank_${k}_h`,t.h]); });
+  const blob = new Blob(['﻿'+rows.map(r=>r.join(',')).join('\n')], {type:'text/csv'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'gas_swap_measurements.csv'; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+};
+$('toggle').onclick = ()=>$('panel').classList.toggle('hide');
+
+addEventListener('keydown', e=>{
+  if(e.target.tagName === 'INPUT') return;
+  const k = e.key.toLowerCase();
+  if(k==='m') toggleMeasure();
+  else if(k==='r') toggleRotate();
+  else if(k==='o') toggleDoors();
+  else if(k==='x') toggleXray();
+  else if(k==='escape') cancelPending();
+  else if(k==='z' && (e.ctrlKey||e.metaKey)) removeMeasure(measures.length-1);
+});
+
+// ฟอร์มพารามิเตอร์
+function numInput(parent, label, get, set){
+  const l = document.createElement('label'); l.textContent = label;
+  const i = document.createElement('input'); i.type='number'; i.step='0.5'; i.min='1'; i.value = get();
+  i.addEventListener('change', ()=>{ const v = parseFloat(i.value); if(v>0){ set(v); buildMachine(); } else i.value = get(); });
+  parent.append(l, i);
+}
+Object.keys(P).forEach(k=> numInput($('gMachine'), P_LABEL[k], ()=>P[k], v=>P[k]=v));
+Object.entries(TANKS).forEach(([k,t])=>{
+  numInput($('gTank'), `${k} กก. — เส้นผ่านศูนย์กลาง`, ()=>t.d, v=>t.d=v);
+  numInput($('gTank'), `${k} กก. — ความสูง`, ()=>t.h, v=>t.h=v);
+});
+
+/* ============================================================
+   10) Loop
+   ============================================================ */
+addEventListener('resize', ()=>{
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight); labelRenderer.setSize(innerWidth, innerHeight);
+});
+const clock = new THREE.Clock();
+function tick(){
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const target = state.doorsOpen ? 1 : 0;
+  doors.forEach((d,i)=>{
+    d.open += (target - d.open) * Math.min(1, dt*(4 + (i%4)*0.6));
+    d.pivot.rotation.y = -1.75 * d.open;
+  });
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+
+try { await document.fonts.load(`800 40px "Noto Sans Thai"`); } catch(e){}
+buildMachine();
+tick();
+</script>
+</body>
+</html>
