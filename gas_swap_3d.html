@@ -434,12 +434,20 @@ function makePerson(){
   const torsoLen = shoulderY - hipY - 14;
   add(new THREE.CapsuleGeometry(17, torsoLen-12, 8, 24), shirt, 0, hipY+8+torsoLen/2, 0).scale.z = 0.7;
   add(new THREE.SphereGeometry(14, 24, 16), shirt, 0, hipY+20, 5).scale.set(1.05, 1, 0.75);
-  // แขน + มือ
+  // แขน + มือ — ชูขึ้นเหนือศีรษะ (หมุนรอบข้อไหล่)
+  const armLen = 56, tilt = 0.15, pivotY = shoulderY - 3;
   [-1, 1].forEach(s=>{
-    const armLen = 50;
-    add(new THREE.CapsuleGeometry(4.6, armLen, 6, 16), shirt, s*21.5, shoulderY-armLen/2-2, 0, 0, s*0.07);
-    add(new THREE.SphereGeometry(4.5, 16, 12), skin, s*23.5, shoulderY-armLen-10, 0);
+    const arm = new THREE.Group();
+    arm.position.set(s*19, pivotY, 0);
+    arm.rotation.z = s*(Math.PI - tilt);
+    const upper = new THREE.Mesh(new THREE.CapsuleGeometry(4.6, armLen, 6, 16), shirt);
+    upper.position.y = -(armLen/2 + 4.6);
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(4.5, 16, 12), skin);
+    hand.position.y = -(armLen + 10);
+    [upper, hand].forEach(m=>{ m.castShadow = true; arm.add(m); });
+    g.add(arm);
   });
+  g.userData.reach = pivotY + (armLen + 10 + 4.5) * Math.cos(tilt);   // ระยะเอื้อมสูงสุด (ปลายมือ)
   // คอ + ศีรษะ (ให้ยอดศีรษะ = 165 ซม. พอดี)
   const headR = 11, headSY = 1.15, headY = H - headR*headSY;
   add(new THREE.CylinderGeometry(5.5, 6, 12, 16), skin, 0, shoulderY+4, 0);
@@ -613,6 +621,8 @@ function buildDims(){
   if(state.person && person){
     const px = person.position.x + 32, pz = person.position.z;
     dimLine(new THREE.Vector3(px-8,0,pz), new THREE.Vector3(px-8,PERSON_H,pz), new THREE.Vector3(8,0,0), `คน ${PERSON_H} ซม.`);
+    const reach = person.userData.reach;
+    dimLine(new THREE.Vector3(px-8,0,pz), new THREE.Vector3(px-8,reach,pz), new THREE.Vector3(28,0,0), `ชูมือ ${reach.toFixed(0)} ซม.`);
   }
   dimGroup.visible = state.dims;
 }
