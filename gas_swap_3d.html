@@ -61,11 +61,11 @@
   span.io.x{background:#2a2f35;color:var(--muted);border:1px solid var(--line)}
   span.io.x.on{background:#0f3a22;color:#5df29a;border-color:#1f7a45}
   button.io.on{background:#ff8a1f;border-color:#ff8a1f;color:#1d0d00}
-  #camBox{display:none;position:fixed;right:12px;bottom:56px;width:300px;z-index:5;
+  #camBox{display:none;position:fixed;right:12px;bottom:56px;width:360px;z-index:5;
     background:transparent;border:1px solid var(--line);border-radius:10px;overflow:hidden;pointer-events:none}
   #camBox .camHead{font-size:12px;padding:4px 8px;background:#0b0e11;color:var(--text)}
   #camBox .rec{color:#ff4040}
-  #camView{width:300px;height:225px}
+  #camView{width:360px;height:270px}
   @media (max-width:640px){ #camBox{width:200px;top:12px;right:12px;bottom:auto} #camView{width:200px;height:150px} }
   #toggle{display:none;position:fixed;top:12px;left:12px;z-index:6}
   @media (max-width:640px){
@@ -108,6 +108,10 @@
       Mxxx ON → ปลดล็อก สปริงดีดประตูออก · <b>คลิกประตู</b>ที่เปิดอยู่เพื่อปิด (M → OFF)<br>
       X = เซนเซอร์ประตูปิด · M120 หมุนได้เมื่อ X000 ON · M200 = ตรวจถังอัตโนมัติ
     </div>
+    <div class="grid">
+      <label>วันหมดอายุบนถังที่ตรวจ (พ.ศ.)</label><input type="number" id="inExp" step="1" value="2565">
+    </div>
+    <div style="color:var(--muted);font-size:11px;margin-top:2px">ปีที่หมดอายุ ≤ ปีปัจจุบัน (พ.ศ. <span id="nowBE"></span>) = ไม่ผ่าน</div>
     <div class="plcWrap"><table id="plc"></table></div>
   </details>
 
@@ -494,7 +498,9 @@ function disposeTree(o){
 
 /* ---------- ช่องตรวจถัง: จานหมุน + กล้องตรวจสภาพถัง ---------- */
 const TURNTABLE = { r:18, baseH:1.5, plateH:3, rpm:6 };   // ซม. / รอบต่อนาที
-const inspect = { table:null, cam:null, light:null, ledMat:null, z:0, turned:0 };
+const inspect = { table:null, cam:null, light:null, ledMat:null, z:0, turned:0,
+                  expiry:2565, textMark:null, ocr:null /* ผลอ่าน: {year, expired} */ };
+const NOW_BE = new Date().getFullYear() + 543;   // ปี พ.ศ. ปัจจุบัน
 function buildInspection(x0, r, f, D, darkMat){
   const cx = x0 + P.colW/2;
   const tz = Math.max(2, D/2 - TURNTABLE.r - 8);     // จานหมุนชิดด้านประตู → กล้องอยู่ไกลพอเห็นถังทั้งใบ
@@ -518,6 +524,33 @@ function buildInspection(x0, r, f, D, darkMat){
     mrk.rotation.y = -a; table.add(mrk);
   }
   const tank = makeTank('15'); tank.position.y = TURNTABLE.plateH; table.add(tank);
+  // ตัวอักษรวันหมดอายุพ่นบนตัวถัง (สีขาว + สนิม) เช่น "ถังหมดอายุ พ.ศ. 2565"
+  {
+    const { d, h } = TANKS['15'], R = d/2 + 0.25;
+    const bodyTop = h - h*0.14*0.7, shoulder = bodyTop - (d/2)*0.5;
+    const thetaLen = Math.PI*0.85, cTheta = 0, H = 9;
+    const yC = shoulder - 9;
+    const tex = canvasTex(R*thetaLen, H, (g,W,Hp)=>{
+      let s = 7; const rnd = ()=> (s = (s*16807) % 2147483647) / 2147483647;
+      for(let i=0;i<40;i++){                       // คราบสนิม
+        g.fillStyle = `rgba(${150+rnd()*60|0},${70+rnd()*40|0},30,${0.35+rnd()*0.4})`;
+        g.beginPath(); g.ellipse(rnd()*W, rnd()<0.6 ? rnd()*Hp*0.25 : rnd()*Hp, 4+rnd()*22, 2+rnd()*7, 0, 0, 7); g.fill();
+      }
+      g.fillStyle = '#f2f2ee'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.font = `700 ${Math.min(Hp*0.72, W*0.085)}px ${FONT}`;
+      g.fillText(`ถังหมดอายุ พ.ศ. ${inspect.expiry}`, W/2, Hp*0.56);
+    });
+    const decal = new THREE.Mesh(
+      new THREE.CylinderGeometry(R, R, H, 48, 1, true, cTheta - thetaLen/2, thetaLen),
+      new THREE.MeshStandardMaterial({ map:tex, transparent:true, alphaTest:0.05, roughness:0.7, side:THREE.FrontSide }));
+    decal.position.y = TURNTABLE.plateH + yC;
+    decal.userData.name = `ตัวอักษรวันหมดอายุบนถัง: พ.ศ. ${inspect.expiry}`;
+    table.add(decal);
+    // จุดอ้างอิงกึ่งกลางตัวอักษร (ใช้ตรวจว่าหันเข้าหากล้องหรือยัง)
+    inspect.textMark = new THREE.Object3D();
+    inspect.textMark.position.set(Math.sin(cTheta)*R, TURNTABLE.plateH + yC, Math.cos(cTheta)*R);
+    table.add(inspect.textMark);
+  }
   machine.add(table);
   inspect.table = table;
 
@@ -554,15 +587,35 @@ function buildInspection(x0, r, f, D, darkMat){
    X000–X013   เซนเซอร์ประตูปิด (ON = ปิดสนิท)
    M120        มอเตอร์จานหมุน (Interlock: ทำงานเมื่อ X000 = ON)
    M121        กล้อง CAM-01 + ไฟ LED
-   M200        ลำดับตรวจถังอัตโนมัติ: กล้อง ON → หมุน 360° → OFF
+   M200        ลำดับตรวจถังอัตโนมัติ: กล้อง ON → หมุน 360° (อ่านวันหมดอายุ OCR) → OFF
+   M210        ผลตรวจ: ผ่าน (ปีหมดอายุ > ปี พ.ศ. ปัจจุบัน)
+   M211        ผลตรวจ: หมดอายุ / อ่านไม่ได้ → สั่ง M100 ดีดประตูคืนถัง
    คลิกประตูที่เปิดอยู่ → ปิดประตู + รีเซ็ต Mxxx = OFF
    ============================================================ */
 const PLC = { M:{}, X:{} };
 const AUX = [
   { M:'M120', desc:'มอเตอร์จานหมุน (ต้อง X000 ON)' },
   { M:'M121', desc:'กล้อง CAM-01 + ไฟ LED' },
-  { M:'M200', desc:'ลำดับตรวจถังอัตโนมัติ (หมุน 360°)' },
+  { M:'M200', desc:'ลำดับตรวจถังอัตโนมัติ (หมุน 360° + อ่านวันหมดอายุ)' },
+  { M:'M210', desc:'ผลตรวจ: ถังผ่าน ✓' },
+  { M:'M211', desc:'ผลตรวจ: ถังหมดอายุ/อ่านไม่ได้ ✗ → ดีดประตูคืนถัง' },
 ];
+function setCamInfo(t){ document.getElementById('camInfo').textContent = t; }
+// สรุปผลเมื่อหมุนครบ 360°
+function finishInspection(){
+  const r = inspect.ocr;
+  setM('M200', false);
+  if(r && !r.expired){
+    setM('M210', true);
+    statusEl.textContent = `✓ ถังผ่าน — หมดอายุ พ.ศ. ${r.year} (ปัจจุบัน ${NOW_BE})`;
+  }else{
+    setM('M211', true);
+    setM('M100', true);                                      // ดีดประตูช่องตรวจ คืนถังให้ลูกค้า
+    statusEl.textContent = r
+      ? `✗ ถังหมดอายุ พ.ศ. ${r.year} (ปัจจุบัน ${NOW_BE}) → M211 ON, M100 ดีดประตูคืนถัง`
+      : '✗ อ่านวันหมดอายุไม่ได้ → M211 ON, M100 ดีดประตูคืนถัง';
+  }
+}
 const OPEN_ANGLE = -1.6;
 function setM(addr, on){
   on = !!on;
@@ -571,7 +624,12 @@ function setM(addr, on){
   const d = doors.find(d=>d.M===addr);
   if(d && on) d.vel = -4.5;                            // สปริงดีดออก
   if(addr==='M200'){
-    if(on){ inspect.turned = 0; setM('M121', true); setM('M120', true); }
+    if(on){
+      inspect.turned = 0; inspect.ocr = null;
+      setM('M210', false); setM('M211', false);
+      setCamInfo('· กำลังค้นหาวันหมดอายุ…');
+      setM('M121', true); setM('M120', true);
+    }
     else  { setM('M120', false); setM('M121', false); }
   }
   refreshPLC();
@@ -943,6 +1001,12 @@ function toggleMeasure(v = !state.measure){
 function toggleRotate(v = !controls.autoRotate){ controls.autoRotate = v; setBtn('bRotate', v); }
 // ปุ่ม "เปิดประตู" = สั่ง M ของประตูทุกบานพร้อมกัน
 function toggleDoors(v = !doors.some(d=>PLC.M[d.M])){ doors.forEach(d=>setM(d.M, v)); setBtn('bDoors', v); }
+$('nowBE').textContent = NOW_BE;
+$('inExp').addEventListener('change', e=>{
+  const v = parseInt(e.target.value, 10);
+  if(v > 2400 && v < 2800){ inspect.expiry = v; inspect.ocr = null; setCamInfo(''); buildMachine(); }
+  else e.target.value = inspect.expiry;
+});
 $('plc').addEventListener('click', e=>{
   const m = e.target.dataset?.m; if(!m) return;
   setM(m, !PLC.M[m]);
@@ -1031,7 +1095,19 @@ function tick(){
     if(PLC.M.M200){
       inspect.turned += dA;
       statusEl.textContent = `M200 กำลังตรวจถัง… ${Math.min(100, inspect.turned/(Math.PI*2)*100).toFixed(0)}%`;
-      if(inspect.turned >= Math.PI*2){ setM('M200', false); statusEl.textContent = 'M200 ตรวจถังครบ 360° แล้ว'; }
+      // OCR จำลอง: อ่านได้เมื่อตัวอักษรหันเข้าหากล้อง (มุม < ~25°)
+      if(!inspect.ocr && inspect.textMark){
+        const p = inspect.textMark.getWorldPosition(new THREE.Vector3());
+        const axis = inspect.table.getWorldPosition(new THREE.Vector3()); axis.y = p.y;
+        const out = p.clone().sub(axis).normalize();
+        const toCam = inspect.cam.position.clone().sub(p).setY(0).normalize();
+        if(out.dot(toCam) > 0.9){
+          const y = inspect.expiry;
+          inspect.ocr = { year:y, expired: y <= NOW_BE };
+          setCamInfo(`· OCR: พ.ศ. ${y} ${inspect.ocr.expired ? '✗ หมดอายุ' : '✓ ใช้ได้'}`);
+        }
+      }
+      if(inspect.turned >= Math.PI*2) finishInspection();
     }
   }
   // --- กล้อง + ไฟ LED: M121 ---
@@ -1065,6 +1141,7 @@ function tick(){
 
 try { await document.fonts.load(`800 40px "Noto Sans Thai"`); } catch(e){}
 buildMachine();
+window.gasSim = { PLC, inspect, setM, doors };   // สำหรับทดสอบผ่าน console
 tick();
 </script>
 </body>
