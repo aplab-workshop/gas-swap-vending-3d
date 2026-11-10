@@ -53,6 +53,20 @@
     white-space:nowrap;pointer-events:none;font-weight:600}
   .lbl.m{background:var(--measure);color:#1a1500}
   .lbl.d{background:#0d1a2bcc;color:#7fc4ff;border:1px solid #2b5a85}
+  .plcWrap{max-height:260px;overflow:auto;margin-top:4px}
+  #plc td{padding:3px 3px;vertical-align:middle}
+  #plc td.pd{text-align:left;font-size:11px;color:var(--text)}
+  #plc code{color:#7fc4ff;font-size:11px}
+  .io{min-width:40px;padding:2px 6px;font-size:11px;border-radius:6px;text-align:center;display:inline-block}
+  span.io.x{background:#2a2f35;color:var(--muted);border:1px solid var(--line)}
+  span.io.x.on{background:#0f3a22;color:#5df29a;border-color:#1f7a45}
+  button.io.on{background:#ff8a1f;border-color:#ff8a1f;color:#1d0d00}
+  #camBox{display:none;position:fixed;right:12px;bottom:56px;width:300px;z-index:5;
+    background:transparent;border:1px solid var(--line);border-radius:10px;overflow:hidden;pointer-events:none}
+  #camBox .camHead{font-size:12px;padding:4px 8px;background:#0b0e11;color:var(--text)}
+  #camBox .rec{color:#ff4040}
+  #camView{width:300px;height:225px}
+  @media (max-width:640px){ #camBox{width:200px;top:12px;right:12px;bottom:auto} #camView{width:200px;height:150px} }
   #toggle{display:none;position:fixed;top:12px;left:12px;z-index:6}
   @media (max-width:640px){
     #panel{width:calc(100% - 24px);max-height:55%;top:auto;bottom:56px}
@@ -89,6 +103,15 @@
   </details>
 
   <details open>
+    <summary>Panel Logic (PLC)</summary>
+    <div style="color:var(--muted);font-size:11px;margin-top:6px;line-height:1.6">
+      Mxxx ON → ปลดล็อก สปริงดีดประตูออก · <b>คลิกประตู</b>ที่เปิดอยู่เพื่อปิด (M → OFF)<br>
+      X = เซนเซอร์ประตูปิด · M120 หมุนได้เมื่อ X000 ON · M200 = ตรวจถังอัตโนมัติ
+    </div>
+    <div class="plcWrap"><table id="plc"></table></div>
+  </details>
+
+  <details open>
     <summary>ตรวจระยะเผื่อ ถัง vs ช่อง</summary>
     <table id="clr"></table>
     <div style="color:var(--muted);font-size:11px;margin-top:4px">
@@ -113,6 +136,10 @@
 </div>
 
 <div id="status">พร้อม</div>
+<div id="camBox">
+  <div class="camHead"><span class="rec">●</span> CAM-01 · ช่องตรวจถัง <span id="camInfo"></span></div>
+  <div id="camView"></div>
+</div>
 
 <script type="importmap">
 { "imports": {
@@ -465,9 +492,114 @@ function disposeTree(o){
   });
 }
 
+/* ---------- ช่องตรวจถัง: จานหมุน + กล้องตรวจสภาพถัง ---------- */
+const TURNTABLE = { r:18, baseH:1.5, plateH:3, rpm:6 };   // ซม. / รอบต่อนาที
+const inspect = { table:null, cam:null, light:null, ledMat:null, z:0, turned:0 };
+function buildInspection(x0, r, f, D, darkMat){
+  const cx = x0 + P.colW/2;
+  const tz = Math.max(2, D/2 - TURNTABLE.r - 8);     // จานหมุนชิดด้านประตู → กล้องอยู่ไกลพอเห็นถังทั้งใบ
+  inspect.z = tz;
+  const mk = (geo, mat, name)=>{ const m = new THREE.Mesh(geo, mat); m.castShadow = m.receiveShadow = true; m.userData.name = name; return m; };
+  // ฐานมอเตอร์ (อยู่กับที่)
+  const base = mk(new THREE.CylinderGeometry(TURNTABLE.r*0.55, TURNTABLE.r*0.6, TURNTABLE.baseH, 32), darkMat, 'มอเตอร์จานหมุน — M120');
+  base.position.set(cx, r.y + TURNTABLE.baseH/2, tz); machine.add(base);
+  // จานหมุน + ถังตัวอย่าง (หมุนไปด้วยกัน)
+  const table = new THREE.Group();
+  table.position.set(cx, r.y + TURNTABLE.baseH, tz);
+  const plate = mk(new THREE.CylinderGeometry(TURNTABLE.r, TURNTABLE.r, TURNTABLE.plateH, 48),
+    new THREE.MeshStandardMaterial({ color:0x2c3137, roughness:0.6, metalness:0.4 }),
+    `จานหมุน Ø${TURNTABLE.r*2} ซม. — M120`);
+  plate.position.y = TURNTABLE.plateH/2; table.add(plate);
+  const markMat = new THREE.MeshStandardMaterial({ color:0xf7c21b, roughness:0.5 });
+  for(let i=0;i<8;i++){            // แถบสีเหลืองให้เห็นการหมุน
+    const a = i/8*Math.PI*2;
+    const mrk = mk(new THREE.BoxGeometry(5, 0.4, 1.4), markMat, 'จานหมุน — M120');
+    mrk.position.set(Math.cos(a)*(TURNTABLE.r-3.5), TURNTABLE.plateH+0.2, Math.sin(a)*(TURNTABLE.r-3.5));
+    mrk.rotation.y = -a; table.add(mrk);
+  }
+  const tank = makeTank('15'); tank.position.y = TURNTABLE.plateH; table.add(tank);
+  machine.add(table);
+  inspect.table = table;
+
+  // กล้องติดผนังหลัง มองถังจากด้านใน
+  const camPos = new THREE.Vector3(cx, r.y + r.h*0.62, -D/2 + f + 4);
+  const look = new THREE.Vector3(cx, r.y + TURNTABLE.baseH + TURNTABLE.plateH + 34, tz);
+  const rig = new THREE.Group(); rig.position.copy(camPos); rig.lookAt(look);
+  const bodyMat = new THREE.MeshStandardMaterial({ color:0x15181c, roughness:0.35, metalness:0.5 });
+  const body = mk(new THREE.BoxGeometry(8, 6, 5), bodyMat, 'กล้องตรวจสภาพถัง CAM-01 — M121');
+  const lens = mk(new THREE.CylinderGeometry(1.8, 1.8, 2.5, 24), new THREE.MeshStandardMaterial({ color:0x0a2a40, roughness:0.05, metalness:0.9 }), 'เลนส์กล้อง CAM-01');
+  lens.rotation.x = Math.PI/2; lens.position.z = 3.5;
+  inspect.ledMat = new THREE.MeshStandardMaterial({ color:0x666666, emissive:0x000000, roughness:0.4 });
+  const ring = mk(new THREE.TorusGeometry(3, 0.6, 10, 32), inspect.ledMat, 'ไฟ LED วงแหวน CAM-01 — M121');
+  ring.position.z = 3;
+  rig.add(body, lens, ring);
+  const bracket = mk(new THREE.BoxGeometry(3, 3, 4), bodyMat, 'ขายึดกล้อง');
+  bracket.position.set(cx, camPos.y, -D/2 + f + 1.5); machine.add(bracket);
+  machine.add(rig);
+
+  inspect.light = new THREE.PointLight(0xf4f8ff, 0, 140, 2);
+  inspect.light.position.copy(camPos).add(new THREE.Vector3(0, 0, 6));
+  machine.add(inspect.light);
+
+  inspect.cam = new THREE.PerspectiveCamera(78, 4/3, 1, 400);
+  inspect.cam.position.copy(camPos).add(new THREE.Vector3(0,0,4.5));
+  inspect.cam.lookAt(look);
+}
+
+/* ============================================================
+   PANEL LOGIC (จำลอง PLC)
+   M100        ปลดล็อกประตูช่องตรวจถัง → สปริงดีดเปิด
+   M101–M109   ปลดล็อกประตูช่องถัง
+   M110–M113   ปลดล็อกประตูช่องอุปกรณ์
+   X000–X013   เซนเซอร์ประตูปิด (ON = ปิดสนิท)
+   M120        มอเตอร์จานหมุน (Interlock: ทำงานเมื่อ X000 = ON)
+   M121        กล้อง CAM-01 + ไฟ LED
+   M200        ลำดับตรวจถังอัตโนมัติ: กล้อง ON → หมุน 360° → OFF
+   คลิกประตูที่เปิดอยู่ → ปิดประตู + รีเซ็ต Mxxx = OFF
+   ============================================================ */
+const PLC = { M:{}, X:{} };
+const AUX = [
+  { M:'M120', desc:'มอเตอร์จานหมุน (ต้อง X000 ON)' },
+  { M:'M121', desc:'กล้อง CAM-01 + ไฟ LED' },
+  { M:'M200', desc:'ลำดับตรวจถังอัตโนมัติ (หมุน 360°)' },
+];
+const OPEN_ANGLE = -1.6;
+function setM(addr, on){
+  on = !!on;
+  if(!!PLC.M[addr] === on) return;
+  PLC.M[addr] = on;
+  const d = doors.find(d=>d.M===addr);
+  if(d && on) d.vel = -4.5;                            // สปริงดีดออก
+  if(addr==='M200'){
+    if(on){ inspect.turned = 0; setM('M121', true); setM('M120', true); }
+    else  { setM('M120', false); setM('M121', false); }
+  }
+  refreshPLC();
+}
+function refreshPLC(){
+  document.querySelectorAll('[data-m]').forEach(b=>{
+    const on = !!PLC.M[b.dataset.m]; b.classList.toggle('on', on); b.textContent = on ? 'ON' : 'OFF';
+  });
+  document.querySelectorAll('[data-x]').forEach(s=>{
+    const on = !!PLC.X[s.dataset.x]; s.classList.toggle('on', on); s.textContent = on ? 'ON' : 'OFF';
+  });
+  document.getElementById('camBox').style.display = PLC.M.M121 ? 'block' : 'none';
+  document.getElementById('bDoors').classList.toggle('on', doors.some(d=>PLC.M[d.M]));
+}
+function renderPLC(){
+  const row = (M, X, desc)=> `<tr><td><code>${M}</code></td><td class="pd">${desc}</td>
+      <td><button class="io" data-m="${M}">OFF</button></td>
+      <td>${X ? `<span class="io x" data-x="${X}" title="${X} เซนเซอร์ประตูปิด">OFF</span>` : ''}</td></tr>`;
+  let html = '<tr><th>M</th><th>หน้าที่</th><th>สั่ง</th><th>X ปิด</th></tr>';
+  doors.forEach(d=>{ html += row(d.M, d.X, d.name.replace(/ \(\d\)$/,'')); });
+  AUX.forEach(a=>{ html += row(a.M, null, a.desc); });
+  document.getElementById('plc').innerHTML = html;
+  refreshPLC();
+}
+
 function buildMachine(){
   if(machine){ scene.remove(machine); disposeTree(machine); }
-  doors.length = 0; xrayMats.length = 0;
+  const oldDoors = doors.splice(0); xrayMats.length = 0;
   machine = new THREE.Group();
   const f=P.frame, D=P.depth, cols=4;
   const W = cols*P.colW + (cols+1)*f;
@@ -519,7 +651,9 @@ function buildMachine(){
   machine.add(roof);
 
   // ประตู / ช่อง
-  const addDoor = (x0, y0, w, h, tex, name)=>{
+  let tankAddr = 101;
+  const addDoor = (x0, y0, w, h, tex, name, mAddr)=>{
+    const idx = doors.length;
     const pivot = new THREE.Group();
     pivot.position.set(x0+DOOR_GAP/2, y0+h/2, D/2+DOOR_T/2);
     const mats = Array(6).fill(steel);
@@ -528,21 +662,29 @@ function buildMachine(){
     mats[4] = front;
     const dw=w-DOOR_GAP, dh=h-DOOR_GAP;
     const m = new THREE.Mesh(new THREE.BoxGeometry(dw, dh, DOOR_T), mats);
-    m.position.x = dw/2; m.castShadow = true; m.userData.name = name;
+    const M = 'M'+mAddr, X = 'X'+String(mAddr-100).padStart(3,'0');
+    m.position.x = dw/2; m.castShadow = true; m.userData.name = `${name} — ${M}`; m.userData.doorIdx = idx;
     pivot.add(m); machine.add(pivot);
-    doors.push({ pivot, open: state.doorsOpen?1:0 });
+    // คงมุมประตูเดิมไว้เมื่อ rebuild
+    const prev = prevDoors[M];
+    doors.push({ pivot, M, X, name, angle: prev?.angle ?? 0, vel: prev?.vel ?? 0 });
+    pivot.rotation.y = doors[idx].angle;
   };
+  const prevDoors = Object.fromEntries(oldDoors.map(d=>[d.M, d]));
 
   rows.forEach(r=>{
     for(let c=0;c<cols;c++){
       const x0 = colX(c);
-      if(r.key==='acc'){ addDoor(x0, r.y, P.colW, r.h, accFace(c,P.colW,r.h), `ช่องอุปกรณ์: ${ACC[c].t} (3)`); continue; }
+      if(r.key==='acc'){ addDoor(x0, r.y, P.colW, r.h, accFace(c,P.colW,r.h), `ช่องอุปกรณ์: ${ACC[c].t} (3)`, 110+c); continue; }
       if(c===0){
-        if(r.key==='15') addDoor(x0, r.y, P.colW, r.h, doorFace('inspect',P.colW,r.h), 'ช่องตรวจถัง QR/น้ำหนัก/AI (6)');
+        if(r.key==='15'){
+          addDoor(x0, r.y, P.colW, r.h, doorFace('inspect',P.colW,r.h), 'ช่องตรวจถัง QR/น้ำหนัก/AI (6)', 100);
+          buildInspection(x0, r, f, D, dark);
+        }
         continue; // ช่อง 7 และ 12.5 คอลัมน์ 0 = ตู้คีออสก์
       }
       const kind = cellKind(r.key, c);
-      addDoor(x0, r.y, P.colW, r.h, doorFace(kind,P.colW,r.h), `ช่องถัง ${kind} กก. (แถว ${r.key}, คอลัมน์ ${c+1})`);
+      addDoor(x0, r.y, P.colW, r.h, doorFace(kind,P.colW,r.h), `ช่องถัง ${kind} กก. (แถว ${r.key}, คอลัมน์ ${c+1})`, tankAddr++);
       const t = makeTank(kind);
       t.position.set(x0+P.colW/2, r.y, -f/2 - 2);
       machine.add(t);
@@ -588,6 +730,7 @@ function buildMachine(){
   machine.traverse(n=>{ if(n.isMesh) n.userData.pickable = true; });
   scene.add(machine);
   applyXray();
+  renderPLC();
   buildDims();
   updateClearance();
   controls.target.set(0, layout.H*0.48, 0);
@@ -648,6 +791,10 @@ function updateClearance(){
   // จอแนวตั้งในคอลัมน์คีออสก์ (สูงหักระยะขอบบน)
   const sw = SCREEN.H/10, sh = SCREEN.W/10, sd = SCREEN.D/10;
   const sv = [P.colW - sw, (layout.kioskH ?? 0) - SCREEN.topMargin - sh, inD - sd];
+  // ช่องตรวจ: ถัง 15 กก. ยืนบนจานหมุน (กว้าง = Ø จาน)
+  const t15 = TANKS['15'];
+  const iv = [P.colW - TURNTABLE.r*2, P.row15 - TURNTABLE.baseH - TURNTABLE.plateH - t15.h, inD - TURNTABLE.r*2 - 10 /* กล้อง+ขายึด */];
+  html += `<tr><td>ช่องตรวจ <small style="color:var(--muted)">(15 กก.+จาน)</small></td>${iv.map(v=>`<td class="${cls(v)}">${v.toFixed(1)}</td>`).join('')}</tr>`;
   html += `<tr><td>จอ 27"</td>${sv.map(v=>`<td class="${cls(v)}">${v.toFixed(1)}</td>`).join('')}</tr>`;
   document.getElementById('clr').innerHTML = html;
 }
@@ -764,8 +911,16 @@ renderer.domElement.addEventListener('pointermove', e=>{
 });
 renderer.domElement.addEventListener('pointerup', e=>{
   if(!downAt || Math.hypot(e.clientX-downAt.x, e.clientY-downAt.y) > 5 || e.button !== 0) return;
-  if(!state.measure) return;
   const hit = pick(e); if(!hit) return;
+  if(!state.measure){
+    // คลิกประตู: ถ้าเปิดอยู่ → ปิด + รีเซ็ต M, ถ้าปิดอยู่ → ล็อก (ต้องสั่ง M)
+    const di = hit.obj.userData.doorIdx;
+    if(di === undefined) return;
+    const d = doors[di];
+    if(PLC.M[d.M]){ setM(d.M, false); statusEl.textContent = `ปิดประตู ${d.name} → ${d.M} = OFF`; }
+    else statusEl.textContent = `🔒 ${d.name} ล็อกอยู่ — สั่ง ${d.M} = ON เพื่อปลดล็อก`;
+    return;
+  }
   if(!pending){
     const m = new THREE.Mesh(markerGeo, markerMat); m.position.copy(hit.point); m.renderOrder=20; measGroup.add(m);
     pending = { a:hit.point.clone(), marker:m };
@@ -786,7 +941,14 @@ function toggleMeasure(v = !state.measure){
   else { cancelPending(); cursor.visible=false; renderer.domElement.style.cursor=''; }
 }
 function toggleRotate(v = !controls.autoRotate){ controls.autoRotate = v; setBtn('bRotate', v); }
-function toggleDoors(v = !state.doorsOpen){ state.doorsOpen = v; setBtn('bDoors', v); }
+// ปุ่ม "เปิดประตู" = สั่ง M ของประตูทุกบานพร้อมกัน
+function toggleDoors(v = !doors.some(d=>PLC.M[d.M])){ doors.forEach(d=>setM(d.M, v)); setBtn('bDoors', v); }
+$('plc').addEventListener('click', e=>{
+  const m = e.target.dataset?.m; if(!m) return;
+  setM(m, !PLC.M[m]);
+  if(m==='M120' && PLC.M.M120 && !PLC.X.X000) statusEl.textContent = '⚠ M120 ON แต่ Interlock: ประตูช่องตรวจ (X000) ยังไม่ปิด — จานไม่หมุน';
+  setBtn('bDoors', doors.some(d=>PLC.M[d.M]));
+});
 function applyXray(){
   xrayMats.forEach(m=>{ m.transparent = state.xray; m.opacity = state.xray ? 0.22 : 1; m.depthWrite = !state.xray; m.needsUpdate = true; });
 }
@@ -846,14 +1008,58 @@ addEventListener('resize', ()=>{
 const clock = new THREE.Clock();
 function tick(){
   const dt = Math.min(clock.getDelta(), 0.05);
-  const target = state.doorsOpen ? 1 : 0;
-  doors.forEach((d,i)=>{
-    d.open += (target - d.open) * Math.min(1, dt*(4 + (i%4)*0.6));
-    d.pivot.rotation.y = -1.75 * d.open;
+  // --- ประตู: สปริง-แดมเปอร์ (เปิด = สปริงเด้ง, ปิด = แดมป์นุ่ม) ---
+  let xChanged = false;
+  const SUB = 4, h = dt/SUB;
+  doors.forEach(d=>{
+    const open = !!PLC.M[d.M];
+    const k = open ? 70 : 45, c = open ? 3.2 : 11, target = open ? OPEN_ANGLE : 0;
+    for(let s=0;s<SUB;s++){
+      d.vel += (k*(target - d.angle) - c*d.vel) * h;
+      d.angle += d.vel * h;
+      if(d.angle > 0){ d.angle = 0; d.vel = -d.vel*0.15; }          // ชนกรอบตู้
+      if(d.angle < -2.1){ d.angle = -2.1; d.vel = -d.vel*0.3; }     // ตัวกันบานพับ
+    }
+    d.pivot.rotation.y = d.angle;
+    const closed = d.angle > -0.02 && Math.abs(d.vel) < 0.3;
+    if(PLC.X[d.X] !== closed){ PLC.X[d.X] = closed; xChanged = true; }
   });
+  // --- จานหมุน: M120 AND X000 (interlock ประตูช่องตรวจปิด) ---
+  if(inspect.table && PLC.M.M120 && PLC.X.X000){
+    const dA = TURNTABLE.rpm/60*Math.PI*2*dt;
+    inspect.table.rotation.y += dA;
+    if(PLC.M.M200){
+      inspect.turned += dA;
+      statusEl.textContent = `M200 กำลังตรวจถัง… ${Math.min(100, inspect.turned/(Math.PI*2)*100).toFixed(0)}%`;
+      if(inspect.turned >= Math.PI*2){ setM('M200', false); statusEl.textContent = 'M200 ตรวจถังครบ 360° แล้ว'; }
+    }
+  }
+  // --- กล้อง + ไฟ LED: M121 ---
+  const camOn = !!PLC.M.M121;
+  if(inspect.light){
+    inspect.light.intensity = camOn ? 9000 : 0;
+    inspect.ledMat.emissive.set(camOn ? 0xdff2ff : 0x000000);
+    inspect.ledMat.emissiveIntensity = camOn ? 2 : 0;
+  }
+  if(xChanged) refreshPLC();
+
   controls.update();
+  renderer.setViewport(0, 0, innerWidth, innerHeight);
   renderer.render(scene, camera);
   labelRenderer.render(scene, camera);
+  // ภาพจากกล้อง CAM-01 (มุมขวาล่าง)
+  if(camOn && inspect.cam){
+    const box = document.getElementById('camView').getBoundingClientRect();
+    const vy = innerHeight - box.bottom;
+    renderer.setScissorTest(true);
+    renderer.setScissor(box.left, vy, box.width, box.height);
+    renderer.setViewport(box.left, vy, box.width, box.height);
+    inspect.cam.aspect = box.width/box.height; inspect.cam.updateProjectionMatrix();
+    const fogSave = scene.fog; scene.fog = null;
+    renderer.render(scene, inspect.cam);
+    scene.fog = fogSave;
+    renderer.setScissorTest(false);
+  }
   requestAnimationFrame(tick);
 }
 
