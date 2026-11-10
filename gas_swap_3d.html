@@ -76,6 +76,7 @@
     <button id="bXray">👁 โปร่งใส (X)</button>
     <button id="bDims" class="on">↔ ขนาดรวม</button>
     <button id="bSnap" class="on">🧲 Snap มุม</button>
+    <button id="bPerson" class="on">🧍 คน 165 ซม.</button>
   </div>
 
   <details open>
@@ -406,7 +407,48 @@ let machine = null;
 const doors = [];         // { pivot, open:0..1 }
 const xrayMats = [];      // วัสดุที่ทำโปร่งใสได้
 let layout = {};
-const state = { doorsOpen:false, xray:false, dims:true, measure:false, snap:true };
+const state = { doorsOpen:false, xray:false, dims:true, measure:false, snap:true, person:true };
+
+/* ---------- หุ่นคนเปรียบเทียบสัดส่วน: ผู้ชายวัยกลางคน สูง 165 ซม. ---------- */
+const PERSON_H = 165;
+let person = null;
+function makePerson(){
+  const H = PERSON_H, g = new THREE.Group();
+  const skin  = new THREE.MeshStandardMaterial({ color:0xc8946b, roughness:0.7 });
+  const shirt = new THREE.MeshStandardMaterial({ color:0x4f7aa8, roughness:0.8 });   // เสื้อโปโล
+  const pants = new THREE.MeshStandardMaterial({ color:0x5b5140, roughness:0.85 });  // กางเกงสแลค
+  const shoe  = new THREE.MeshStandardMaterial({ color:0x2a1f18, roughness:0.5 });
+  const hair  = new THREE.MeshStandardMaterial({ color:0x8a8a86, roughness:0.9 });   // ผมสีดอกเลา
+  const add = (geo, mat, x, y, z, rx=0, rz=0) => {
+    const m = new THREE.Mesh(geo, mat); m.position.set(x,y,z); m.rotation.set(rx,0,rz);
+    m.castShadow = true; m.receiveShadow = true; g.add(m); return m;
+  };
+  const hipY = H*0.49, shoulderY = H*0.815;
+  // เท้า + ขา
+  [-9, 9].forEach(x=>{
+    add(new THREE.BoxGeometry(10, 6, 26), shoe, x, 3, 4);
+    add(new THREE.CylinderGeometry(7.5, 6, hipY-6, 20), pants, x, 6+(hipY-6)/2, 0);
+  });
+  // สะโพก + ลำตัว + พุง
+  add(new THREE.CylinderGeometry(16.5, 16, 14, 24), pants, 0, hipY+2, 0).scale.z = 0.72;
+  const torsoLen = shoulderY - hipY - 14;
+  add(new THREE.CapsuleGeometry(17, torsoLen-12, 8, 24), shirt, 0, hipY+8+torsoLen/2, 0).scale.z = 0.7;
+  add(new THREE.SphereGeometry(14, 24, 16), shirt, 0, hipY+20, 5).scale.set(1.05, 1, 0.75);
+  // แขน + มือ
+  [-1, 1].forEach(s=>{
+    const armLen = 50;
+    add(new THREE.CapsuleGeometry(4.6, armLen, 6, 16), shirt, s*21.5, shoulderY-armLen/2-2, 0, 0, s*0.07);
+    add(new THREE.SphereGeometry(4.5, 16, 12), skin, s*23.5, shoulderY-armLen-10, 0);
+  });
+  // คอ + ศีรษะ (ให้ยอดศีรษะ = 165 ซม. พอดี)
+  const headR = 11, headSY = 1.15, headY = H - headR*headSY;
+  add(new THREE.CylinderGeometry(5.5, 6, 12, 16), skin, 0, shoulderY+4, 0);
+  add(new THREE.SphereGeometry(headR, 32, 24), skin, 0, headY, 0).scale.set(0.9, headSY, 1);
+  const cap = add(new THREE.SphereGeometry(headR+0.3, 32, 16, 0, Math.PI*2, 0, Math.PI*0.42), hair, 0, headY-0.5, -1.2);
+  cap.scale.set(0.9, headSY, 1); cap.rotation.x = -0.35;
+  g.traverse(n=>{ if(n.isMesh) n.userData.name = `คนวัยกลางคน (ชาย) สูง ${PERSON_H} ซม. — เปรียบเทียบสัดส่วน`; });
+  return g;
+}
 
 function disposeTree(o){
   o.traverse(n=>{
@@ -529,6 +571,12 @@ function buildMachine(){
   ext.position.set(feX, rows[1].y+20, 10.5); ext.scale.z = 0.25; ext.userData.name='ถังดับเพลิง'; machine.add(ext);
   box(8,5,4, new THREE.MeshStandardMaterial({color:0xf3f3f3}), feX, rows[1].y-28, 0, 'เซนเซอร์ตรวจจับแก๊สรั่ว');
 
+  // คนยืนด้านขวาของตู้ หันหน้าออกด้านหน้า
+  person = makePerson();
+  person.position.set(W/2 + 75, 0, D/2 - 15);
+  person.visible = state.person;
+  machine.add(person);
+
   machine.traverse(n=>{ if(n.isMesh) n.userData.pickable = true; });
   scene.add(machine);
   applyXray();
@@ -562,6 +610,10 @@ function buildDims(){
   dimLine(new THREE.Vector3(-W/2,0,fz), new THREE.Vector3(W/2,0,fz), new THREE.Vector3(0,0,25), `กว้าง ${W.toFixed(1)} ซม.`);
   dimLine(new THREE.Vector3(W/2,0,fz), new THREE.Vector3(W/2,H,fz), new THREE.Vector3(25,0,0), `สูง ${H.toFixed(1)} ซม.`);
   dimLine(new THREE.Vector3(W/2,0,-D/2), new THREE.Vector3(W/2,0,D/2), new THREE.Vector3(25,0,0), `ลึก ${D.toFixed(1)} ซม.`);
+  if(state.person && person){
+    const px = person.position.x + 32, pz = person.position.z;
+    dimLine(new THREE.Vector3(px-8,0,pz), new THREE.Vector3(px-8,PERSON_H,pz), new THREE.Vector3(8,0,0), `คน ${PERSON_H} ซม.`);
+  }
   dimGroup.visible = state.dims;
 }
 
@@ -736,6 +788,7 @@ $('bDoors').onclick   = ()=>toggleDoors();
 $('bXray').onclick    = ()=>toggleXray();
 $('bDims').onclick    = ()=>{ state.dims=!state.dims; dimGroup.visible=state.dims; setBtn('bDims',state.dims); };
 $('bSnap').onclick    = ()=>{ state.snap=!state.snap; setBtn('bSnap',state.snap); };
+$('bPerson').onclick  = ()=>{ state.person=!state.person; setBtn('bPerson',state.person); if(person) person.visible=state.person; buildDims(); };
 $('bClear').onclick   = ()=>{ cancelPending(); while(measures.length) removeMeasure(measures.length-1); };
 $('bCsv').onclick     = ()=>{
   const rows = [['no','distance_cm','dx','dy','dz','ax','ay','az','bx','by','bz']];
