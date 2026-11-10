@@ -105,7 +105,7 @@
   <details open>
     <summary>Panel Logic (PLC)</summary>
     <div style="color:var(--muted);font-size:11px;margin-top:6px;line-height:1.6">
-      Mxxx ON → ปลดล็อก สปริงดีดประตูออก · <b>คลิกประตู</b>ที่เปิดอยู่เพื่อปิด (M → OFF)<br>
+      Mxxx ON → กลอนไฟฟ้าหดสลัก 🔓 → สปริงดีดประตูออก · <b>คลิกประตู</b>ที่เปิดอยู่เพื่อปิด (M → OFF) → ปิดสนิทแล้วสลักยื่นล็อก 🔒<br>
       X = เซนเซอร์ประตูปิด · M120 หมุนได้เมื่อ X000 ON · M200 = ตรวจถังอัตโนมัติ
     </div>
     <div class="grid">
@@ -582,6 +582,8 @@ function buildInspection(x0, r, f, D, darkMat){
 /* ============================================================
    PANEL LOGIC (จำลอง PLC)
    M100        ปลดล็อกประตูช่องตรวจถัง → สปริงดีดเปิด
+               (ทุกประตูมีกลอนไฟฟ้า: M ON → สลักหด → ประตูดีด / M OFF + ประตูปิดสนิท → สลักยื่นล็อก
+                ไฟบนประตู แดง = ล็อก, เขียว = ปลดล็อก)
    M101–M109   ปลดล็อกประตูช่องถัง
    M110–M113   ปลดล็อกประตูช่องอุปกรณ์
    X000–X013   เซนเซอร์ประตูปิด (ON = ปิดสนิท)
@@ -622,7 +624,7 @@ function setM(addr, on){
   if(!!PLC.M[addr] === on) return;
   PLC.M[addr] = on;
   const d = doors.find(d=>d.M===addr);
-  if(d && on) d.vel = -4.5;                            // สปริงดีดออก
+  if(d) d.kick = on;                                   // สปริงดีดออก หลังสลักหดสุด
   if(addr==='M200'){
     if(on){
       inspect.turned = 0; inspect.ocr = null;
@@ -641,14 +643,18 @@ function refreshPLC(){
   document.querySelectorAll('[data-x]').forEach(s=>{
     const on = !!PLC.X[s.dataset.x]; s.classList.toggle('on', on); s.textContent = on ? 'ON' : 'OFF';
   });
+  document.querySelectorAll('[data-lock]').forEach(s=>{
+    const d = doors.find(d=>d.M===s.dataset.lock); if(d) s.textContent = d.locked ? '🔒' : '🔓';
+  });
   document.getElementById('camBox').style.display = PLC.M.M121 ? 'block' : 'none';
   document.getElementById('bDoors').classList.toggle('on', doors.some(d=>PLC.M[d.M]));
 }
 function renderPLC(){
   const row = (M, X, desc)=> `<tr><td><code>${M}</code></td><td class="pd">${desc}</td>
       <td><button class="io" data-m="${M}">OFF</button></td>
-      <td>${X ? `<span class="io x" data-x="${X}" title="${X} เซนเซอร์ประตูปิด">OFF</span>` : ''}</td></tr>`;
-  let html = '<tr><th>M</th><th>หน้าที่</th><th>สั่ง</th><th>X ปิด</th></tr>';
+      <td>${X ? `<span class="io x" data-x="${X}" title="${X} เซนเซอร์ประตูปิด">OFF</span>` : ''}</td>
+      <td>${X ? `<span class="lk" data-lock="${M}" title="สถานะกลอน">🔒</span>` : ''}</td></tr>`;
+  let html = '<tr><th>M</th><th>หน้าที่</th><th>สั่ง</th><th>X ปิด</th><th>กลอน</th></tr>';
   doors.forEach(d=>{ html += row(d.M, d.X, d.name.replace(/ \(\d\)$/,'')); });
   AUX.forEach(a=>{ html += row(a.M, null, a.desc); });
   document.getElementById('plc').innerHTML = html;
@@ -710,6 +716,8 @@ function buildMachine(){
 
   // ประตู / ช่อง
   let tankAddr = 101;
+  const lockMat = new THREE.MeshStandardMaterial({ color:0x2b2f34, roughness:0.4, metalness:0.7 });
+  const boltMat = new THREE.MeshStandardMaterial({ color:0xd8dde2, roughness:0.2, metalness:0.95 });
   const addDoor = (x0, y0, w, h, tex, name, mAddr)=>{
     const idx = doors.length;
     const pivot = new THREE.Group();
@@ -723,9 +731,30 @@ function buildMachine(){
     const M = 'M'+mAddr, X = 'X'+String(mAddr-100).padStart(3,'0');
     m.position.x = dw/2; m.castShadow = true; m.userData.name = `${name} — ${M}`; m.userData.doorIdx = idx;
     pivot.add(m); machine.add(pivot);
-    // คงมุมประตูเดิมไว้เมื่อ rebuild
+
+    // --- ตัวล็อกประตู: กลอนไฟฟ้า (solenoid) ติดผนังด้านขอบประตูฝั่งเปิด + ห่วงรับกลอนบนประตู ---
+    const ly = y0 + h*0.55, lz = D/2 - 3, lockName = `กลอนไฟฟ้า (Solenoid lock) — ${M}`;
+    const lockBody = new THREE.Mesh(new THREE.BoxGeometry(3.2, 7, 4), lockMat);
+    lockBody.position.set(x0 + w - 1.6, ly, lz); lockBody.castShadow = true; lockBody.userData.name = lockName;
+    machine.add(lockBody);
+    const bolt = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.4, 1.6), boltMat);
+    bolt.position.set(x0 + w - 1.6, ly, lz); bolt.userData.name = `สลักกลอน — ${M}`;
+    machine.add(bolt);
+    const strike = new THREE.Mesh(new THREE.BoxGeometry(1.2, 4, 4), lockMat);   // ห่วงรับสลัก (ติดหลังประตู)
+    strike.position.set(dw - 4.2, ly - (y0 + h/2), -DOOR_T/2 - 2.2); strike.userData.name = `ห่วงรับกลอน — ${M}`;
+    pivot.add(strike);
+    // ไฟสถานะบนหน้าประตู: แดง = ล็อก, เขียว = ปลดล็อก
+    const ledMat = new THREE.MeshStandardMaterial({ color:0x330000, emissive:0xff2020, emissiveIntensity:1.5 });
+    const led = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 0.6, 16), ledMat);
+    led.rotation.x = Math.PI/2; led.position.set(dw*0.11, dh*0.05, DOOR_T/2 + 0.3); led.userData.name = `ไฟสถานะล็อก — ${M}`;
+    pivot.add(led);
+    const boltIn = x0 + w - 1.6, boltOut = x0 + w - 3.2 - 1.3;   // ตำแหน่งสลัก หด / ยื่น
+
+    // คงสถานะเดิมไว้เมื่อ rebuild
     const prev = prevDoors[M];
-    doors.push({ pivot, M, X, name, angle: prev?.angle ?? 0, vel: prev?.vel ?? 0 });
+    doors.push({ pivot, M, X, name, angle: prev?.angle ?? 0, vel: prev?.vel ?? 0,
+                 lock: prev?.lock ?? 1, kick: prev?.kick ?? false, locked: prev?.locked ?? true,
+                 bolt, boltIn, boltOut, ledMat });
     pivot.rotation.y = doors[idx].angle;
   };
   const prevDoors = Object.fromEntries(oldDoors.map(d=>[d.M, d]));
@@ -1076,7 +1105,18 @@ function tick(){
   let xChanged = false;
   const SUB = 4, h = dt/SUB;
   doors.forEach(d=>{
-    const open = !!PLC.M[d.M];
+    // --- กลอนไฟฟ้า: M ON → สลักหด / M OFF + ประตูปิดสนิท → สลักยื่นล็อก ---
+    const cmd = !!PLC.M[d.M];
+    const lockTarget = cmd ? 0 : (d.angle > -0.02 ? 1 : 0);
+    d.lock += Math.sign(lockTarget - d.lock) * Math.min(Math.abs(lockTarget - d.lock), dt*7);
+    d.bolt.position.x = d.boltIn + (d.boltOut - d.boltIn) * d.lock;
+    const locked = d.lock > 0.5;
+    if(locked !== d.locked){ d.locked = locked; xChanged = true; }
+    d.ledMat.emissive.set(locked ? 0xff2020 : 0x20ff60);
+    d.ledMat.color.set(locked ? 0x330000 : 0x003311);
+    // ประตูเปิดได้เมื่อสลักหดเกือบสุดแล้วเท่านั้น
+    const open = cmd && d.lock < 0.08;
+    if(open && d.kick){ d.vel = -4.5; d.kick = false; }
     const k = open ? 70 : 45, c = open ? 3.2 : 11, target = open ? OPEN_ANGLE : 0;
     for(let s=0;s<SUB;s++){
       d.vel += (k*(target - d.angle) - c*d.vel) * h;
