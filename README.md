@@ -5,3 +5,7 @@
 - เปิด `gas_swap_3d.html` ในเบราว์เซอร์ (ต้องต่ออินเทอร์เน็ตเพื่อโหลด Three.js)
 - หน่วย: 1 หน่วย 3D = 1 ซม.
 - ปุ่มลัด: `M` วัดระยะ · `R` หมุน · `O` เปิดประตู · `X` โปร่งใส · `Esc` ยกเลิก · `Ctrl+Z` ลบการวัดล่าสุด
+
+## ทำงานร่วมกับ AI (Codex + Claude)
+- กติกากลาง: [AGENTS.md](AGENTS.md) · กระดานงาน: [docs/TASKS.md](docs/TASKS.md) · บันทึกส่งต่อ: [docs/HANDOFF.md](docs/HANDOFF.md)
+- ทดสอบก่อน commit: `node scripts/check.mjs`
