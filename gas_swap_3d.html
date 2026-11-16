@@ -861,6 +861,11 @@ function screenDims(){
   const title = makeLabel(`จอ 27" ${SCREEN.model} · ${SCREEN.W} × ${SCREEN.H} × ${SCREEN.D} มม. (วางแนวตั้ง)`, 's');
   title.position.set(p.x, p.y - hh - 14, zf + 6); dimGroup.add(title);
 }
+// ซ่อน/แสดงเส้นบอกขนาด — ต้องตั้งที่ป้าย CSS2D ทีละอัน เพราะ CSS2DRenderer ไม่สนว่ากลุ่มแม่ถูกซ่อน
+function setDimsVisible(v){
+  dimGroup.visible = v;
+  dimGroup.traverse(o=>{ if(o.isCSS2DObject) o.visible = v; });
+}
 function clearGroup(gp){
   [...gp.children].forEach(c=>{ gp.remove(c); c.geometry?.dispose(); c.material?.dispose(); if(c.element) c.element.remove(); });
 }
@@ -878,7 +883,7 @@ function buildDims(){
     const reach = person.userData.reach;
     dimLine(new THREE.Vector3(px-8,0,pz), new THREE.Vector3(px-8,reach,pz), new THREE.Vector3(28,0,0), `ชูมือ ${reach.toFixed(0)} ซม.`);
   }
-  dimGroup.visible = state.dims;
+  setDimsVisible(state.dims);
 }
 
 /* ============================================================
@@ -1075,7 +1080,7 @@ $('bMeasure').onclick = ()=>toggleMeasure();
 $('bRotate').onclick  = ()=>toggleRotate();
 $('bDoors').onclick   = ()=>toggleDoors();
 $('bXray').onclick    = ()=>toggleXray();
-$('bDims').onclick    = ()=>{ state.dims=!state.dims; dimGroup.visible=state.dims; setBtn('bDims',state.dims); };
+$('bDims').onclick    = ()=>{ state.dims=!state.dims; setDimsVisible(state.dims); setBtn('bDims',state.dims); };
 $('bSnap').onclick    = ()=>{ state.snap=!state.snap; setBtn('bSnap',state.snap); };
 $('bPerson').onclick  = ()=>{ state.person=!state.person; setBtn('bPerson',state.person); if(person) person.visible=state.person; buildDims(); };
 $('bClear').onclick   = ()=>{ cancelPending(); while(measures.length) removeMeasure(measures.length-1); };
@@ -1205,7 +1210,7 @@ function tick(){
 
 try { await document.fonts.load(`800 40px "Noto Sans Thai"`); } catch(e){}
 buildMachine();
-window.gasSim = { PLC, inspect, setM, doors };   // สำหรับทดสอบผ่าน console
+window.gasSim = { PLC, inspect, setM, doors, dimGroup };   // สำหรับทดสอบผ่าน console
 tick();
 </script>
 </body>
