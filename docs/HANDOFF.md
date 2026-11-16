@@ -14,6 +14,12 @@
 
 ---
 
+## 2026-11-17 · Claude · main · deploy
+- ทำอะไร: เจ้าของสั่ง deploy เวอร์ชันล่าสุด → push `main` เข้า `gh-pages` (เลิกตรึงที่ `a50eea3`) · แก้กติกา deploy ใน `AGENTS.md`
+- ไฟล์/หมวดที่แตะ: `AGENTS.md` (Git และการ Deploy) · ไม่แตะ `gas_swap_3d.html`
+- ทดสอบ: `node scripts/check.mjs` ผ่าน · เปิดเว็บสาธารณะตรวจว่าเป็นเวอร์ชันใหม่
+- ถึงคนต่อไป: deploy เฉพาะเมื่อเจ้าของสั่ง
+
 ## 2026-11-16 · Claude · claude/fix-dims-toggle
 - ทำอะไร: แก้บั๊กปุ่ม "↔ ขนาดรวม" ปิดแล้วป้ายตัวเลขยังค้าง — CSS2DRenderer (three r160) ไม่สนใจ visible ของกลุ่มแม่
   จึงเพิ่ม `setDimsVisible(v)` ตั้ง visible ให้ป้าย CSS2D ทุกอันใน `dimGroup` · เพิ่ม `dimGroup` ใน `window.gasSim`

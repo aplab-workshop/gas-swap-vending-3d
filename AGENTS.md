@@ -48,8 +48,9 @@ Codex อ่านไฟล์นี้อัตโนมัติ · Claude Cod
 ## Git และการ Deploy
 - Repo: `aplab-workshop/gas-swap-vending-3d` (public)
 - **`main`** = งานล่าสุด
-- **`gh-pages`** = เว็บที่เผยแพร่ ถูก **ตรึงไว้ที่ `a50eea3`** (ก่อนเพิ่มกล้อง) ตามที่เจ้าของสั่ง
-  → **ห้าม push / merge เข้า `gh-pages`** จนกว่าเจ้าของจะสั่งชัดเจน
+- **`gh-pages`** = เว็บที่เผยแพร่ (https://aplab-workshop.github.io/gas-swap-vending-3d/)
+  อัปเดตเป็น `main` ล่าสุดเมื่อ 2026-11-17 ตามที่เจ้าของสั่ง
+  → **deploy (push เข้า `gh-pages`) เฉพาะเมื่อเจ้าของสั่งเท่านั้น** — agent ห้าม deploy เอง
 - ทำงานบน branch ของตัวเอง: `codex/<หัวข้อ>` หรือ `claude/<หัวข้อ>` แล้วค่อย merge เข้า `main`
 - commit เล็ก ๆ ทีละเรื่อง ข้อความ commit ภาษาอังกฤษ บอกว่าทำอะไร
 
